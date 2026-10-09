@@ -99,8 +99,8 @@ def runs(a):
     for r in call("GET", "/api/runs"):
         s = r.get("summary") or {}
         print(f"{r['id']}  {r['status']:<9} {r.get('stage') or '':<9} code {r.get('code_version') or '-':<10} "
-              + (f"{s.get('crosswalks', '?')} crosswalks, {s.get('hidden', '?')} hide people from oncoming traffic, "
-                 f"{s.get('zone_blocked', '?')} with something in the 20 ft" if s else ""))
+              + (f"{s.get('crosswalks', '?')} crossings, {s.get('crossings_judged', '?')} judged, "
+                 f"{s.get('crossings_exposed', '?')} with a side hidden from the rider at stopping distance" if s else ""))
 
 
 def rerun(a):

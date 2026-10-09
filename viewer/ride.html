@@ -67,15 +67,17 @@
           background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
           border-left: 8px solid var(--asphalt-3); border-radius: 0 var(--r-m) var(--r-m) 0; box-shadow: 0 14px 40px rgba(0, 0, 0, .35); }
   .card.v-hidden { border-left-color: var(--curb); }
-  .card.v-zone { border-left-color: var(--line); }
+  .card.v-part { border-left-color: var(--line); }
   .card.v-clear { border-left-color: var(--lane); }
+  .card.v-none, .card.v-disputed { border-left-color: #7d8285; }
   .card.fresh { animation: slide .45s cubic-bezier(.2, .8, .2, 1); }
   @keyframes slide { from { transform: translateY(14px); opacity: 0; } }
   .ch { display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center; }
   .disc { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 20px; color: #fff;
           background: var(--asphalt-3); padding-top: 3px; }
   .v-hidden .disc { background: var(--curb); }
-  .v-zone .disc { background: var(--line); color: var(--night); }
+  .v-part .disc { background: var(--line); color: var(--night); }
+  .v-none .disc, .v-disputed .disc { background: #7d8285; }
   .v-clear .disc { background: var(--lane); }
   .ch h2 { font-size: 19px; line-height: 1.2; font-weight: 800; margin: 0; }
   .ch p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
@@ -90,6 +92,9 @@
   .why { margin: 6px 0 0; font-size: 13px; color: #d4d3cd; }
   .next { margin: 0; font-weight: 800; font-size: 19px; }
   .hint { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .meter.strip { height: 12px; border-radius: 3px; overflow: hidden; }
+  .meter.strip i { position: absolute; top: 0; bottom: 0; }
+  .scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
 
   .mini { position: absolute; right: 22px; bottom: 86px; width: clamp(220px, 19vw, 300px); height: clamp(150px, 13vw, 200px);
           border-radius: var(--r-m); border: 1px solid var(--edge); background: rgba(16, 19, 21, .66); }
@@ -113,12 +118,17 @@
   .key { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 40px; font-size: 14px; color: var(--read-muted); }
   .key i { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
   .xlist { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 14px; }
-  .xi { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding: 16px; background: var(--read-card); border-radius: 0 var(--r-m) var(--r-m) 0;
+  .xi { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 18px; padding: 16px; background: var(--read-card); border-radius: 0 var(--r-m) var(--r-m) 0;
         border-left: 8px solid var(--asphalt-3); cursor: pointer; }
-  .xi.v-hidden { border-left-color: var(--curb); } .xi.v-zone { border-left-color: var(--line); } .xi.v-clear { border-left-color: var(--lane); }
+  .xi.v-hidden { border-left-color: var(--curb); } .xi.v-part { border-left-color: var(--line); } .xi.v-clear { border-left-color: var(--lane); } .xi.v-none, .xi.v-disputed { border-left-color: #7d8285; }
   .xi .ch p, .xi .ap-h span:last-child, .xi .why { color: var(--read-muted); }
   .xi .meter { background: rgba(127, 127, 127, .2); }
   .xi img { width: 100%; border-radius: var(--r-s); display: block; }
+  .xi .scale { color: var(--read-muted); }
+  .shots { display: grid; gap: 12px; align-content: start; }
+  .shots figure { margin: 0; }
+  .shots img.one { width: 50%; min-width: 260px; }
+  .shots figcaption { font-size: 12px; line-height: 1.4; color: var(--read-muted); margin-top: 5px; }
   .foot { font-size: 13px; margin-top: 36px; }
 
   @media (max-width: 900px) {
@@ -162,6 +172,7 @@
       <button data-view="chase" aria-pressed="false">Behind the rider</button>
       <button data-view="overview" aria-pressed="false">Whole street</button>
       <button data-view="free" aria-pressed="false">Look around</button>
+      <button id="seen" aria-pressed="true">What the rider saw</button>
       <button id="cloud" aria-pressed="true">3D points</button>
     </div>
   </div>
@@ -171,11 +182,12 @@
     <h2>How the check works</h2>
     <p id="lede"></p>
     <div class="key">
-      <span><i style="background:var(--curb)"></i>person at the curb hidden from oncoming traffic</span>
-      <span><i style="background:var(--line)"></i>seen in time, but something stands in the 20 ft</span>
-      <span><i style="background:var(--lane)"></i>daylit: clear</span>
-      <span><i style="background:rgba(224,54,44,.7)"></i>standing car</span>
-      <span><i style="background:#c9cdcf"></i>moving car</span>
+      <span><i style="background:var(--curb)"></i>hidden where stopping must start</span>
+      <span><i style="background:var(--line)"></i>partly hidden</span>
+      <span><i style="background:var(--lane)"></i>in view in time</span>
+      <span><i style="background:#7d8285"></i>not judged, or the two checks disagree</span>
+      <span><i style="background:rgba(255,240,196,.6)"></i>ground the rider could see</span>
+      <span><i style="background:rgba(224,54,44,.7)"></i>ground hidden from the rider; stopped vehicle</span>
       <span><i style="background:rgba(245,197,24,.7)"></i>hedge, planter or shelter</span>
     </div>
     <h2>Every crossing on this ride</h2>
@@ -205,67 +217,114 @@ const ortho = new Image(); ortho.src = base + D.ortho;
 await new Promise(r => ortho.onload = r);
 
 const byId = Object.fromEntries(D.objects.map(o => [o.id, o]));
-const cws = D.objects.filter(o => o.group === 'crosswalk' && o.approaches).sort((a, b) => a.t_pass - b.t_pass);
+const cws = D.objects.filter(o => o.group === 'crosswalk' && o.ends).sort((a, b) => a.t_pass - b.t_pass);
 cws.forEach((c, i) => c.n = i + 1);
-const S = D.stats, E = D.extent, CAM_H = D.cam_h || 1.1;
-const verdict = c => c.hidden ? 'v-hidden' : c.zone_blocked ? 'v-zone' : 'v-clear';
-const vcol = c => c.hidden ? css('--curb') : c.zone_blocked ? css('--line') : css('--lane');
-const names = ids => [...new Set(ids.map(i => byId[i].label))];
+const S = D.stats, E = D.extent, CAM_H = D.cam_h || 1.1, RULES = D.rules || {};
+const WIN = RULES.window_m ?? 12, TH = RULES.target_h ?? 1, CLEAR = RULES.clear ?? .9;
+// a side of a crossing: hidden (under half of it in view where stopping must start), part hidden, in view, not judged
+const level = e => !e.covered ? 'none' : e.seen_at_stop >= CLEAR ? 'clear' : e.review?.claim === 'rejected' ? 'disputed'
+                 : e.seen_at_stop >= .5 ? 'part' : 'hidden';
+const RANK = { hidden: 3, part: 2, clear: 1, disputed: .5, none: 0 };
+const worst = c => c.ends.reduce((w, e) => RANK[level(e)] > RANK[level(w)] ? e : w, c.ends[0]);
+const verdict = c => 'v-' + level(worst(c));
+const judged = c => c.ends.some(e => e.covered);
+const COL = { hidden: css('--curb'), part: css('--line'), clear: css('--lane'), disputed: '#9aa0a3', none: '#7d8285' };
+const vcol = c => COL[level(worst(c))];
+const seenCol = s => s >= CLEAR ? COL.clear : s >= .5 ? COL.part : COL.hidden;
+const NAME = { hedge: 'hedge', planter: 'planter', 'bus shelter': 'bus shelter', kiosk: 'kiosk', 'utility box': 'utility box', tree: 'tree', pole: 'lamp post', person: 'person', bicycle: 'bike' };
 const list = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
 const cap = s => s[0].toUpperCase() + s.slice(1);
-const things = ids => {                     // "a standing car", "3 standing vehicles", "a hedge and 2 standing vehicles"
-  const os = [...new Set(ids)].map(i => byId[i]), v = os.filter(o => o.group === 'vehicle'), f = names(os.filter(o => o.group !== 'vehicle').map(o => o.id));
-  const vs = v.length === 1 ? `a ${v[0].label}` : v.length ? `${v.length} standing vehicles` : '';
-  return list([...f.map(n => `a ${n}`), ...(vs ? [vs] : [])]);
-};
-const LEAD = 3.4, GROW = 1.1, TAIL = 1.4;           // s of ride: inspection starts LEAD before passing, rays grow over GROW
+const pct = x => `${Math.round(100 * x)}%`, mm = x => `${Math.round(x)} m`;
+const nameOf = o => o.group === 'vehicle' ? o.label : (NAME[o.group] || o.group);
+function hiders(e) {                        // "a hedge", "3 hedges", "4 lamp posts and things the detector did not name"
+  const n = {};
+  for (const b of e.blockers) { const k = nameOf(byId[b.id]); n[k] = (n[k] || 0) + 1; }
+  const parts = Object.entries(n).map(([k, c]) => c === 1 ? `a ${k}` : `${c} ${k}s`);
+  if (e.unnamed > e.blockers.reduce((s, b) => s + b.n, 0)) parts.push('things the detector did not name');
+  return list(parts) || 'something the detector did not name';
+}
+const TAIL = 1.0;                           // s past the crossing the inspection lasts
 
 // ---- words ----
-$('headline').innerHTML = `<span class="count">${S.hidden ?? 0} of ${S.crosswalks}</span> crosswalks on this ride hide people waiting to cross from oncoming traffic.`;
-$('sub').textContent = S.zone_blocked == null ? '' :
-  `${S.zone_blocked} of ${S.crosswalks} have a car or street furniture standing in the 20 feet before the crossing, where daylighting keeps the curb clear.`;
-$('lede').textContent = `We rode ${Math.round(S.distance)} m of the bike path in ${Math.round(S.duration)} seconds. From the video alone we rebuilt the street in 3D ` +
-  `and found each crosswalk, the cars that stood still while we passed, and the hedges, planters and shelters along the curb. ` +
-  `Daylighting keeps the 20 feet before a crosswalk, on the side traffic comes from, clear, so a person at the curb and an oncoming driver or rider can see each other. ` +
-  `For every crossing we trace the sightlines from the curb up each oncoming lane, find what blocks them, and compare how far away the person first becomes visible with the distance needed to stop.`;
-$('foot').textContent = `Distances are in metres from an assumed ${CAM_H} m camera height; video alone has no scale. Crosswalks, cars and street furniture come from an open-vocabulary detector, ` +
-  `placed where the camera ray through their base meets the rebuilt road; a furniture item's height comes from the top of its box. Anything taller than ${D.rules?.occlude_h ?? .9} m blocks a sightline. ` +
-  `Stopping distance uses the rider's own speed at each crossing, ${D.rules?.react_s ?? 1.5} s to react and ${D.rules?.decel ?? 3} m/s² of braking. ` +
-  `A car counts as standing when it did not move while we rode past it; one ride cannot tell a parked car from one waiting at a light, more rides past the same corner can.`;
+{
+  const bad = cws.filter(c => level(worst(c)) === 'hidden').concat(cws.filter(c => level(worst(c)) === 'part'));
+  const none = cws.filter(c => !judged(c));
+  const whys = none.map(c => { const w = c.ends.map(e => e.why || '').join(' ');
+    return w.includes('starts') ? `crossing ${c.n} is where the ride starts` : w.includes('turning') ? `at crossing ${c.n} the bike was turning hard`
+         : w.includes('farther out') ? `at crossing ${c.n} the rider was too fast: stopping takes longer than the ${WIN} m the rebuild can judge`
+         : `the camera did not face crossing ${c.n} from far enough out`; });
+  if (bad.length) {
+    const c = bad[0], w = worst(c), b = w.blockers[0] && byId[w.blockers[0].id];
+    $('headline').innerHTML = level(w) === 'hidden'
+      ? `At crossing ${c.n}, ${b ? 'a ' + nameOf(b) : 'something'} hides the ${w.side} side from the rider until <span class="count">${mm(w.clear_from_m ?? 0)}</span> out. Stopping takes ${mm(w.needed_m)}.`
+      : `At crossing ${c.n}, <span class="count">${pct(1 - w.seen_at_stop)}</span> of the ${w.side} side is hidden from the rider where stopping must start.`;
+  } else $('headline').textContent = S.crossings_judged ? `The rider could see both sides of every crossing in time.` : `No crossing on this ride could be judged.`;
+  $('sub').textContent = `What the handlebar camera could see of each crossing on the way in. ${S.crossings_judged} of ${S.crosswalks} crossings could be judged` +
+    (whys.length ? `: ${list(whys)}.` : '.');
+}
+const RV = S.review_model ? ` Before a hidden side counts, a vision model (${S.review_model}) is shown the camera's frames with the side outlined and asked whether it really is hidden and by what.` : '';
+$('lede').textContent = `We rode ${Math.round(S.distance)} m of the bike path in ${Math.round(S.duration)} seconds. The video is the rider's view: from it alone we rebuilt the street in 3D ` +
+  `and found each crossing, the vehicles that stood still while we passed, and the hedges, planters and shelters along it. Daylighting keeps the 20 feet before a crossing clear ` +
+  `so that a rider coming toward it and someone about to cross can see each other. At each side of every crossing we take the patch of ground where someone about to cross would be, ` +
+  `and in every frame on the way in we check whether the camera could see a ${TH} m tall person or bike standing there, or whether something nearer covered it. ` +
+  `Then we compare where that side came fully into view with the distance the rider needed to stop.` + RV;
+$('foot').textContent = `Distances are in metres from an assumed ${CAM_H} m camera height; video alone has no scale. A side counts as in view when the camera saw at least ${pct(CLEAR)} of it, ` +
+  `checked against the depth rebuilt from the video, which holds to about 13 m, so only the last ${WIN} m before a crossing are judged. The camera sits on the handlebar at about ${CAM_H} m; ` +
+  `a rider's eyes are about half a metre higher, so they see over something as tall as these hedges sooner: a standing adult shows above them, a child or a person in a wheelchair does not. ` +
+  `Stopping distance uses the rider's own speed into each crossing, ${RULES.react_s ?? 1.5} s to react and ${RULES.decel ?? 3} m/s² of braking. ` +
+  `A vehicle counts as stopped when it did not move while we rode past; one ride cannot tell a parked car from one waiting at a light, more rides past the same corner can.`;
 
 function title(c) {
-  const A = c.approaches.filter(a => a.covered), w = (A.length ? A : c.approaches)
-    .reduce((w, a) => (a.seen_from_m - a.needed_m < w.seen_from_m - w.needed_m ? a : w));
-  return { w, text: c.hidden ? `Hidden until ${Math.round(w.seen_from_m)} m; stopping takes ${Math.round(w.needed_m)} m`
-                  : c.zone_blocked ? `Seen in time, but ${things(c.approaches.flatMap(a => a.in_zone))} in the 20 ft`
-                  : `Seen from ${Math.round(w.seen_from_m)} m; stopping takes ${Math.round(w.needed_m)} m` };
+  const w = worst(c), lv = level(w), b = w.blockers[0] && byId[w.blockers[0].id];
+  if (lv === 'none') return `Not judged: ${w.why}`;
+  if (lv === 'disputed') return `Unclear: the 3D check and the vision check disagree on the ${w.side} side`;
+  if (lv === 'clear') return c.ends.every(e => e.covered) ? 'Both sides in view in time' : `The ${w.side} side was in view in time`;
+  if (lv === 'part') return `The ${w.side} side is ${pct(1 - w.seen_at_stop)} hidden where stopping must start`;
+  return `${cap(b ? 'a ' + nameOf(b) : 'something')} hides the ${w.side} side until ${w.clear_from_m == null ? 'the crossing' : mm(w.clear_from_m) + ' out'}`;
 }
-function meter(a) {                        // 0 m (the crossing) on the left, up the oncoming lane to the right
-  const max = Math.max(a.reach_m, a.needed_m, 1), pct = m => `${Math.min(100, Math.max(0, m) / max * 100).toFixed(1)}%`;
-  const by = things(a.blockers.map(b => b.id)), zone = things(a.in_zone);
-  const note = !a.covered ? `the ride ${a.direction === 'with the ride' ? 'starts' : 'ends'} here: lane not seen`
-             : a.hidden ? `curb seen at ${Math.round(a.seen_from_m)} m, needs ${Math.round(a.needed_m)} m`
-             : `curb seen from ${Math.round(a.seen_from_m)} m, needs ${Math.round(a.needed_m)} m`;
-  const bar = !a.covered ? `<div class="meter off"></div>` :
-    `<div class="meter" role="img" aria-label="${note}"><i class="seen" style="width:${pct(a.seen_from_m)}"></i>` +
-    (a.hidden ? `<i class="gap" style="left:${pct(a.seen_from_m)};width:calc(${pct(a.needed_m)} - ${pct(a.seen_from_m)})"></i>` : '') +
-    `<b class="stop" style="left:${pct(a.needed_m)}"></b></div>`;
-  const why = [by && a.covered ? `blocked by ${by}` : '', zone ? `${zone} in the 20 ft` : ''].filter(Boolean).join('; ');
-  return `<div><div class="ap-h"><span>Coming ${a.direction}</span><span>${note}</span></div>${bar}` +
-         (why ? `<p class="why">${cap(why)}.</p>` : '') + `</div>`;
+function strip(e) {                          // the way in, WIN m out on the left to the crossing on the right
+  const F = e.frames.filter(f => f.counted && f.seen != null).sort((a, b) => b.d - a.d);
+  const X = d => `${((WIN - Math.min(WIN, Math.max(0, d))) / WIN * 100).toFixed(1)}%`;
+  const segs = F.map((f, i) => {
+    const a = i ? (F[i - 1].d + f.d) / 2 : Math.min(WIN, f.d + .5), b = i < F.length - 1 ? (f.d + F[i + 1].d) / 2 : Math.max(0, f.d - .5);
+    return `<i style="left:${X(a)};width:calc(${X(b)} - ${X(a)});background:${seenCol(f.seen)}"></i>`;
+  }).join('');
+  const label = `${cap(e.side)} side on the way in: ${F.map(f => `${pct(f.seen)} in view at ${mm(f.d)}`).join(', ')}`;
+  return `<div class="meter strip" role="img" aria-label="${label}">${segs}<b class="stop" style="left:${X(e.needed_m)}"></b></div>` +
+         `<div class="scale"><span>${WIN} m out</span><span>white mark: stopping must start</span><span>crossing</span></div>`;
+}
+function endHTML(e) {
+  const side = `${cap(e.side)} side`;
+  if (!e.covered) return `<div><div class="ap-h"><span>${side}</span><span>not judged</span></div><div class="meter off"></div><p class="why">${cap(e.why)}.</p></div>`;
+  const lv = level(e);
+  const note = lv === 'clear' ? `in view at ${mm(e.stop_d)}` : lv === 'disputed' ? `disputed` : `${pct(1 - e.seen_at_stop)} hidden at ${mm(e.stop_d)}`;
+  const when = e.clear_from_m == null ? `Never fully in view before it left the camera's view.` : lv === 'clear' ? `In view from ${mm(Math.max(e.clear_from_m, e.stop_d))} or more.` : `Fully in view only from ${mm(e.clear_from_m)}.`;
+  const by = lv === 'hidden' || lv === 'part' ? ` Hidden by ${hiders(e)}.` : '';
+  const rv = e.review ? (e.review.claim === 'confirmed' ? ` A vision model shown these frames agrees: ${e.review.reason}`
+                        : e.review.claim === 'rejected' ? ` The 3D check put ${pct(1 - e.seen_at_stop)} of it out of view at ${mm(e.stop_d)}, but a vision model shown these frames disagrees: ${e.review.reason}`
+                        : ` A vision model shown these frames could not tell: ${e.review.reason}`) : '';
+  const zn = {};
+  e.blockers.filter(b => b.in_20ft).forEach(b => { const k = nameOf(byId[b.id]); zn[k] = (zn[k] || 0) + 1; });
+  const zl = Object.entries(zn).map(([k, n]) => n === 1 ? `a ${k}` : `${n} ${k}s`), many = Object.values(zn).reduce((a, b) => a + b, 0) > 1;
+  const z = lv !== 'clear' && zl.length ? ` ${cap(list(zl))} ${many ? 'stand' : 'stands'} in the 20 ft before the crossing.` : '';
+  return `<div><div class="ap-h"><span>${side}</span><span>${note}</span></div>${strip(e)}<p class="why">${lv === 'disputed' ? '' : when + by + z}${rv}</p></div>`;
 }
 function cardHTML(c) {
-  const t = title(c);
-  return `<div class="ch"><span class="disc">${c.n}</span><div><h2>${t.text}</h2>` +
-         `<p>Crossing ${c.n} at ${c.t_pass.toFixed(1)} s, riding at ${Math.round(t.w.speed_kmh)} km/h</p></div></div>` +
-         `<div class="aps">${c.approaches.map(meter).join('')}</div>`;
+  const w = c.ends.find(e => e.covered) || c.ends[0];
+  return `<div class="ch"><span class="disc">${c.n}</span><div><h2>${title(c)}</h2>` +
+         `<p>Crossing ${c.n} at ${c.t_edge.toFixed(1)} s, riding at ${Math.round(w.speed_kmh)} km/h: stopping takes ${mm(w.needed_m)}</p></div></div>` +
+         `<div class="aps">${c.ends.map(endHTML).join('')}</div>`;
 }
-$('xlist').innerHTML = cws.map(c => `<li class="xi ${verdict(c)}" tabindex="0" data-id="${c.id}"><div>${cardHTML(c)}</div>` +
-  (c.evidence ? `<img src="${base + c.evidence}" alt="Crossing ${c.n} as the camera saw it at ${c.evidence_t.toFixed(1)} s" loading="lazy">` : '<span></span>') + `</li>`).join('');
+function renderList() {
+$('xlist').innerHTML = cws.map(c => `<li class="xi ${verdict(c)}" tabindex="0" data-id="${c.id}"><div>${cardHTML(c)}</div><div class="shots">` +
+  c.ends.filter(e => e.evidence).map(e => `<figure><img onload="this.naturalWidth < 1000 && this.classList.add('one')" src="${base + e.evidence}" alt="The ${e.side} side of crossing ${c.n} as the camera saw it on the way in" loading="lazy">` +
+    `<figcaption>${cap(e.side)} side: the camera's view where stopping must start${e.clear_k != null && e.clear_k !== e.stop_k ? ', and where it came fully into view' : ''}. The box is a ${TH} m tall patch where someone about to cross would stand.</figcaption></figure>`).join('') +
+  `</div></li>`).join('');
 document.querySelectorAll('.xi').forEach(el => {
-  const go = () => { const c = byId[+el.dataset.id]; scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' }); seek(Math.max(0, c.t_pass - LEAD - .3)); start(); };
+  const go = () => { const c = byId[+el.dataset.id]; scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' }); seek(Math.max(0, (c.tw0 ?? c.t_pass) - .3)); start(); };
   el.onclick = go; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
 });
+}
 
 // ---- the ride: pose at time t, distance along it ----
 const PATH = D.path, arc = [0];
@@ -278,11 +337,19 @@ function rider(t) {
   let dh = b.h - a.h; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
   return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, h: (a.h + dh * u) * Math.PI / 180, s: arc[i] + (arc[i + 1] - arc[i]) * u };
 }
-cws.forEach(c => { let best = 0, bd = 1e9; PATH.forEach((p, i) => { const d = Math.hypot(p.x - c.xy[0], p.y - c.xy[1]); if (d < bd) { bd = d; best = i; } }); c.s = arc[best]; });
-const inWindow = (c, t) => t >= c.t_pass - LEAD && t <= c.t_pass + TAIL;
+const sAt = xy => { let best = 0, bd = 1e9; PATH.forEach((p, i) => { const d = Math.hypot(p.x - xy[0], p.y - xy[1]); if (d < bd) { bd = d; best = i; } }); return arc[best]; };
+const tAtS = s => { const i = Math.max(1, arc.findIndex(v => v >= s)); if (i < 1 || arc[i] === undefined) return PATH[PATH.length - 1].t;
+  const u = (s - arc[i - 1]) / Math.max(arc[i] - arc[i - 1], 1e-6); return PATH[i - 1].t + (PATH[i].t - PATH[i - 1].t) * Math.min(1, Math.max(0, u)); };
+function riderAtS(s) { return rider(tAtS(Math.max(0, s))); }
+cws.forEach(c => {
+  c.s = sAt(c.xy); c.s_edge = sAt(c.edge); c.t_edge = tAtS(c.s_edge);
+  const ks = c.ends.flatMap(e => e.frames.map(f => f.k));
+  c.tw0 = ks.length ? PATH[Math.min(...ks)].t : c.t_edge - 1.5;      // from WIN m out
+  c.tw1 = c.t_edge + TAIL;                                           // to just past the crossing
+});
+const inWindow = (c, t) => judged(c) && t >= c.tw0 && t <= c.tw1;
 const inspecting = t => cws.find(c => inWindow(c, t)) || null;
-const growth = (c, t) => Math.min(1, Math.max(0, (t - (c.t_pass - LEAD)) / GROW));
-const ease = x => 1 - Math.pow(1 - x, 3);
+renderList();
 
 // ---- the street in 3D (plan metres, z up) ----
 const stage = $('stage');
@@ -376,7 +443,7 @@ function block(o, color, opacity, h) {
 }
 for (const o of D.objects) {
   if (o.group === 'vehicle') block(o, o.parked ? C3.red : new THREE.Color('#8a8f92'), o.parked ? .62 : .16, o.height || 1.45);
-  else if (o.footprint) block(o, C3.yellow, o.occluder ? .5 : .14, Math.max(.3, Math.min(o.height || 1, 3.5)));
+  else if (o.footprint) block(o, C3.yellow, o.blocks ? .55 : .14, Math.max(.3, Math.min(o.height || 1, 3.5)));
   else if (o.group !== 'crosswalk') {
     const spec = { bollard: [new THREE.CylinderGeometry(.1, .1, .9, 12), C3.yellow, .45], person: [new THREE.CapsuleGeometry(.23, 1.1, 4, 10), C3.paint, .8],
                    bicycle: [new THREE.BoxGeometry(.45, .45, 1), new THREE.Color('#6fc3ff'), .5], 'fire hydrant': [new THREE.CylinderGeometry(.16, .2, .7, 12), C3.red, .35],
@@ -388,9 +455,9 @@ for (const o of D.objects) {
   }
 }
 
-// crossings: zebra bars, the 20 ft zones, the person at each curb, sightlines, painted verdicts, labels
+// crossings: zebra bars, each side's watch area (a 1 m tall box), the sightline from the rider, road paint, labels
 for (const c of cws) {
-  const r = rider(c.t_pass), v = [Math.cos(r.h), Math.sin(r.h)], u = [-v[1], v[0]];
+  const r = rider(c.t_edge), v = [Math.cos(r.h), Math.sin(r.h)], u = [-v[1], v[0]];
   const R = c.rect, ctr = [R.reduce((s, p) => s + p[0], 0) / 4, R.reduce((s, p) => s + p[1], 0) / 4];
   const hu = Math.max(...R.map(p => Math.abs((p[0] - ctr[0]) * u[0] + (p[1] - ctr[1]) * u[1])));
   const hv = Math.max(...R.map(p => Math.abs((p[0] - ctr[0]) * v[0] + (p[1] - ctr[1]) * v[1])));
@@ -398,44 +465,62 @@ for (const c of cws) {
     const bar = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.6, 2 * hv - .6), .5), new THREE.MeshBasicMaterial({ color: C3.paint, transparent: true, opacity: .82, depthWrite: false }));
     bar.position.set(ctr[0] + u[0] * k, ctr[1] + u[1] * k, .04); bar.rotation.z = Math.atan2(v[1], v[0]); scene.add(bar);
   }
-  const disc = textSprite(String(c.n), c.zone_blocked && !c.hidden ? '#1e2022' : '#ffffff', vcol(c), 1.5); disc.position.set(c.xy[0], c.xy[1], 7.5); scene.add(disc);
-  c.fx = { aps: [], labels: [] };
-  for (const a of c.approaches) {
-    scene.add(new THREE.Mesh(flat(a.zone, .02), new THREE.MeshBasicMaterial({ color: a.in_zone.length ? C3.red : C3.green, transparent: true, opacity: .32, depthWrite: false })));
-    const ped = new THREE.Mesh(new THREE.CapsuleGeometry(.24, 1.1, 4, 10), new THREE.MeshLambertMaterial({ color: C3.paint, emissive: '#333333' }));
-    ped.rotation.x = Math.PI / 2; ped.position.set(a.waiting[0], a.waiting[1], .8); scene.add(ped);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(.45, .6, 40), new THREE.MeshBasicMaterial({ color: a.hidden ? C3.red : a.covered ? C3.green : C3.paint, transparent: true, depthWrite: false }));
-    ring.position.set(a.waiting[0], a.waiting[1], .06); scene.add(ring);
-    // sightlines: two vertices a ray, grown from the curb outward during the inspection
-    const n = a.rays.length, pos = new Float32Array(n * 6), col = new Float32Array(n * 6);
-    a.rays.forEach((ray, i) => { const k = ray.clear ? C3.paint : C3.red; col.set([k.r, k.g, k.b, k.r, k.g, k.b], 6 * i); });
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const rays = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .85, depthWrite: false }));
-    rays.renderOrder = 4; rays.frustumCulled = false; scene.add(rays);
-    // the verdict painted on the lane, facing the traffic that reads it
+  const disc = textSprite(String(c.n), verdict(c) === 'v-part' ? '#1e2022' : '#ffffff', vcol(c), 1.5); disc.position.set(c.xy[0], c.xy[1], 7.5); scene.add(disc);
+  c.fx = { ends: [], labels: [] };
+  for (const e of c.ends) {
+    const A = e.area, mid = [A.reduce((s, p) => s + p[0], 0) / 4, A.reduce((s, p) => s + p[1], 0) / 4];
+    const box = new THREE.Mesh(new THREE.ExtrudeGeometry((() => { const sh = new THREE.Shape(); A.forEach((p, i) => i ? sh.lineTo(p[0], p[1]) : sh.moveTo(p[0], p[1])); return sh; })(), { depth: TH, bevelEnabled: false }),
+                               new THREE.MeshBasicMaterial({ color: '#9aa0a3', transparent: true, opacity: .12, depthWrite: false }));
+    box.renderOrder = 3; scene.add(box);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({ color: '#9aa0a3', transparent: true, opacity: .9 }));
+    scene.add(edges);
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: .95, depthTest: false }));
+    line.renderOrder = 6; line.frustumCulled = false; line.visible = false; scene.add(line);
     const paints = [];
-    const at = d => a.rays.reduce((b, q) => Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b, a.rays[0]);
-    const put = (m, d) => {
-      const q = at(d), dir = [a.edge[0] - q.to[0], a.edge[1] - q.to[1]], l = Math.hypot(...dir) || 1;
-      m.position.set(q.to[0], q.to[1], .07); m.rotation.z = Math.atan2(dir[1] / l, dir[0] / l) - Math.PI / 2; scene.add(m); paints.push(m);
-    };
-    if (a.rays.length && a.covered) put(roadText(['STOP', `${Math.round(a.needed_m)} M`], '#f2f1ec'), a.needed_m);
-    if (a.rays.length && a.hidden) put(roadText(['SEEN', `AT ${Math.round(a.seen_from_m)} M`], css('--curb')), Math.max(a.seen_from_m, 1.6));
-    c.fx.aps.push({ a, rays, ring, paints });
+    if (e.covered) {                                   // painted on the ride, reading toward the rider
+      const put = (m, d) => { const p = riderAtS(c.s_edge - d); m.position.set(p.x, p.y, .07); m.rotation.z = p.h - Math.PI / 2; m.visible = false; scene.add(m); paints.push(m); };
+      if (!c.fx.stop) { put(roadText(['STOP', `${Math.round(e.needed_m)} M`], '#f2f1ec'), e.needed_m); c.fx.stop = true; }
+      if (e.exposed && e.clear_from_m != null && level(e) === 'hidden')
+        put(roadText([`${e.side.toUpperCase()}`, `SEEN ${Math.round(e.clear_from_m)} M`], css('--curb')), Math.max(e.clear_from_m, 1.6));
+    }
+    c.fx.ends.push({ e, box, edges, line, mid, paints });
   }
-  for (const id of new Set(c.approaches.flatMap(a => [...a.in_zone, ...a.blockers.map(b => b.id)]))) {
+  for (const id of new Set(c.ends.filter(e => level(e) === 'hidden').flatMap(e => e.blockers.slice(0, 2).map(b => b.id)))) {
     const o = byId[id]; if (!o.footprint) continue;
-    const txt = o.group === 'vehicle' ? cap(o.label) : `${cap(o.label)}, ${o.height.toFixed(1)} m tall`;
-    const sp = textSprite(txt, o.group === 'vehicle' ? '#ffffff' : '#1e2022', o.group === 'vehicle' ? css('--curb') : css('--line'), .7);
-    sp.position.set(o.xy[0], o.xy[1], (o.height || 1.45) + .9 + .85 * c.fx.labels.length); scene.add(sp); c.fx.labels.push({ sp, id });
+    const txt = o.group === 'vehicle' ? cap(o.label) : o.height ? `${cap(NAME[o.group] || o.group)}, ${o.height.toFixed(1)} m tall` : cap(NAME[o.group] || o.group);
+    const sp = textSprite(txt, o.group === 'vehicle' ? '#ffffff' : '#1e2022', o.group === 'vehicle' ? css('--curb') : css('--line'), .55);
+    sp.position.set(o.xy[0], o.xy[1], (o.height || 1.45) + .7 + .7 * c.fx.labels.length); scene.add(sp); c.fx.labels.push({ sp, id });
   }
+}
+// what the rider could see: per frame, the street within WIN m, light where it was in view and red where it was hidden
+let viewMesh = null, viewTex = null, viewData = null, viewK = -2;
+if (D.view) {
+  const V = D.view;
+  viewData = new Uint8Array(await (await fetch(base + V.file)).arrayBuffer());
+  viewTex = new THREE.DataTexture(new Uint8Array(V.nx * V.ny * 4), V.nx, V.ny, THREE.RGBAFormat);
+  viewTex.magFilter = viewTex.minFilter = THREE.LinearFilter;
+  viewMesh = new THREE.Mesh(new THREE.PlaneGeometry(V.nx * V.res, V.ny * V.res), new THREE.MeshBasicMaterial({ map: viewTex, transparent: true, depthWrite: false }));
+  viewMesh.position.set(V.x0 + V.nx * V.res / 2, V.y0 + V.ny * V.res / 2, .015); viewMesh.renderOrder = 2; scene.add(viewMesh);
+}
+function setView(k) {
+  if (!viewTex || k === viewK) return;
+  viewK = k;
+  const V = D.view, n = V.nx * V.ny, off = Math.min(V.frames - 1, Math.max(0, k)) * n, px = viewTex.image.data;
+  for (let i = 0; i < n; i++) {
+    const s = viewData[off + i], j = 4 * i;
+    if (s === 1) { px[j] = 255; px[j + 1] = 236; px[j + 2] = 180; px[j + 3] = 105; }
+    else if (s === 2) { px[j] = 236; px[j + 1] = 40; px[j + 2] = 32; px[j + 3] = 200; }
+    else px[j + 3] = 0;
+  }
+  viewTex.needsUpdate = true;
 }
 // the rider
 const riderM = new THREE.Group();
 { const body = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.3, 4), new THREE.MeshLambertMaterial({ color: C3.yellow, emissive: '#5a4600' }));
   body.rotation.z = -Math.PI / 2; body.position.z = CAM_H; riderM.add(body);
-  const half = D.hfov / 2 * Math.PI / 180, sh = new THREE.Shape(); sh.moveTo(0, 0); sh.absarc(0, 0, 14, -half, half, false); sh.lineTo(0, 0);
-  const cone = new THREE.Mesh(new THREE.ShapeGeometry(sh, 24), new THREE.MeshBasicMaterial({ color: C3.yellow, transparent: true, opacity: .12, depthWrite: false }));
+  const half = D.hfov / 2 * Math.PI / 180, sh = new THREE.Shape(); sh.moveTo(0, 0); sh.absarc(0, 0, WIN, -half, half, false); sh.lineTo(0, 0);
+  const cone = new THREE.Mesh(new THREE.ShapeGeometry(sh, 24), new THREE.MeshBasicMaterial({ color: C3.yellow, transparent: true, opacity: .07, depthWrite: false }));
   cone.position.z = .05; riderM.add(cone); }
 scene.add(riderM);
 
@@ -456,16 +541,13 @@ function shot(t, now) {
   }
   const c = inspecting(t);
   if (!c) return behind();
-  // above and behind the traffic coming toward the crossing, looking down its lane: the approaching rider's view, raised
-  const a = c.approaches.find(a => a.hidden) || c.approaches.find(a => a.covered) || c.approaches[0];
-  const far = a.lane.length ? a.lane[Math.min(a.lane.length - 1, 11)] : [c.xy[0] - 10 * fx, c.xy[1] - 10 * fy];
-  let dx = a.edge[0] - far[0], dy = a.edge[1] - far[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-  const k = still ? 0 : (t - (c.t_pass - LEAD)) * .08 - .25;        // drift slowly round while it is inspected
-  const sx = Math.cos(k) * -dy - Math.sin(k) * dx, sy = Math.cos(k) * dx - Math.sin(k) * dy;
-  const mid = [(a.waiting[0] + a.edge[0]) / 2 - dx * Math.min(a.needed_m, 10) * .35, (a.waiting[1] + a.edge[1]) / 2 - dy * Math.min(a.needed_m, 10) * .35];
-  const aside = innerWidth > 900 ? 3.5 : 0;                         // the words sit on the left: keep the crossing right of them
-  wantLook.set(mid[0] - dy * aside, mid[1] + dx * aside, 0);
-  wantEye.set(mid[0] - dx * 17 + sx * 7 - dy * aside, mid[1] - dy * 17 + sy * 7 + dx * aside, 20);
+  // raised behind the rider, looking past them at the side of the crossing they cannot see
+  const e = worst(c), mid = c.fx.ends.find(f => f.e === e).mid;
+  let dx = mid[0] - R.x, dy = mid[1] - R.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+  const side = (fx * (mid[1] - R.y) - fy * (mid[0] - R.x)) > 0 ? -1 : 1;    // stand off to the other side
+  const aside = innerWidth > 900 ? 2.5 : 0;
+  wantLook.set((R.x + mid[0]) / 2 + fx * 1.5 - fy * aside, (R.y + mid[1]) / 2 + fy * 1.5 + fx * aside, .4);
+  wantEye.set(R.x - fx * 11 + side * -fy * 4.5, R.y - fy * 11 + side * fx * 4.5, 9.5);
 }
 
 // ---- per frame: the scene's moving parts ----
@@ -475,21 +557,23 @@ function update3d(t, now) {
   let k = 0; while (k < PATH.length - 1 && PATH[k + 1].t <= t) k++;
   ribbon.geometry.setDrawRange(0, 6 * k);
   const pulse = still ? .5 : .5 + .5 * Math.sin(now * .006);
-  const lit = new Set();
+  setView(Math.round(t * D.fps));
+  const lit = new Set(), kf = Math.round(t * D.fps), act = inspecting(t);
   for (const c of cws) {
-    const on = view === 'overview' || view === 'free' ? 1 : inWindow(c, t) ? ease(growth(c, t)) : 0;
-    for (const f of c.fx.aps) {
-      const p = f.rays.geometry.attributes.position, w = f.a.waiting;
-      f.a.rays.forEach((ray, i) => {
-        p.setXYZ(2 * i, w[0], w[1], 1.0);
-        p.setXYZ(2 * i + 1, w[0] + (ray.to[0] - w[0]) * on, w[1] + (ray.to[1] - w[1]) * on, 1.0 + .1 * on);
-      });
-      p.needsUpdate = true; f.rays.visible = on > 0;
-      f.paints.forEach(m => m.visible = on >= .999);
-      const s = still ? 1.4 : 1 + 1.6 * ((now * .0011) % 1);
-      f.ring.visible = on > 0; f.ring.scale.set(s, s, 1); f.ring.material.opacity = still ? .8 : 1.1 - (s - 1) / 1.6;
+    const on = c === act || view === 'overview' || view === 'free';
+    for (const f of c.fx.ends) {
+      const fr = f.e.frames.find(q => q.k === kf), live = c === act && fr && fr.seen != null && f.e.covered && level(f.e) !== 'disputed';
+      const col = live ? new THREE.Color(seenCol(fr.seen)) : f.e.covered ? new THREE.Color(COL[level(f.e)]) : new THREE.Color('#9aa0a3');
+      f.box.material.color.copy(col); f.edges.material.color.copy(col);
+      f.box.material.opacity = live ? .42 + .2 * pulse : on ? .3 : .12;
+      f.line.visible = !!live;
+      if (live) {
+        const p = f.line.geometry.attributes.position; p.setXYZ(0, R.x, R.y, CAM_H); p.setXYZ(1, f.mid[0], f.mid[1], TH); p.needsUpdate = true;
+        f.line.material.color.copy(col);
+      }
+      f.paints.forEach(m => m.visible = on);
     }
-    for (const L of c.fx.labels) { L.sp.visible = view !== 'overview' && on >= .999; if (on > 0) lit.add(L.id); }
+    for (const L of c.fx.labels) { L.sp.visible = c === act && view !== 'overview'; if (c === act) lit.add(L.id); }
   }
   for (const [id, m] of Object.entries(meshOf)) { const q = lit.has(+id) ? pulse : 0; m.material.emissive.setRGB(.55 * q, .45 * q, .1 * q); }
   if (view === 'free') orbit.update();
@@ -507,20 +591,20 @@ new ResizeObserver(size3).observe(stage); size3();
 // ---- the card: the crossing being inspected, else the next one ----
 let shown = null;
 function updateCard(t) {
-  const c = cws.find(c => t >= c.t_pass - LEAD - .4 && t <= c.t_pass + TAIL + 1.2) || null;
-  const nx = cws.find(c => c.t_pass > t);
+  const c = cws.find(c => t >= c.tw0 - .4 && t <= c.tw1 + 1.2) || null;
+  const nx = cws.find(c => c.tw0 > t);
   const key = c ? `c${c.id}` : `n${nx ? nx.id : 'end'}`;
   if (key === shown) {
     const el = $('card').querySelector('.next');
-    if (!c && nx && el) el.textContent = `Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s - rider(t).s))} m`;
+    if (!c && nx && el) el.textContent = `Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s_edge - rider(t).s))} m`;
     return;
   }
   shown = key;
   const card = $('card');
   card.className = 'card ' + (c ? verdict(c) : '');
   card.innerHTML = c ? cardHTML(c)
-    : nx ? `<p class="next">Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s - rider(t).s))} m</p><p class="hint">Space plays or pauses. The arrow keys jump between crossings.</p>`
-         : `<p class="next">End of the ride</p><p class="hint">${S.crosswalks} crossings checked over ${Math.round(S.distance)} m.</p>`;
+    : nx ? `<p class="next">Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s_edge - rider(t).s))} m</p><p class="hint">Light ground is what the rider could see, red what was hidden. Space plays or pauses; the arrow keys jump between crossings.</p>`
+         : `<p class="next">End of the ride</p><p class="hint">${S.crosswalks} crossings over ${Math.round(S.distance)} m; ${S.crossings_judged} could be judged.</p>`;
   void card.offsetWidth; card.classList.add('fresh');
 }
 
@@ -538,16 +622,16 @@ function drawMini(t) {
   const poly = pts => { ctx.beginPath(); pts.forEach((p, i) => { const [x, y] = P(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); };
   ctx.clearRect(0, 0, W, H);
   const [ix, iy] = P(E.x0, E.y1); ctx.globalAlpha = .9; ctx.drawImage(ortho, ix, iy, (E.x1 - E.x0) * MS.s, (E.y1 - E.y0) * MS.s); ctx.globalAlpha = 1;
-  for (const c of cws) for (const a of c.approaches) { poly(a.zone); ctx.fillStyle = a.in_zone.length ? 'rgba(224,54,44,.45)' : 'rgba(47,163,107,.35)'; ctx.fill(); }
+  for (const c of cws) for (const e of c.ends) { poly(e.area); ctx.fillStyle = COL[level(e)] + '99'; ctx.fill(); }
   for (const o of D.objects) if (o.footprint) {
     poly(o.footprint);
-    ctx.fillStyle = o.group === 'vehicle' ? (o.parked ? 'rgba(224,54,44,.75)' : 'rgba(201,205,207,.25)') : (o.occluder ? 'rgba(245,197,24,.75)' : 'rgba(245,197,24,.25)'); ctx.fill();
+    ctx.fillStyle = o.group === 'vehicle' ? (o.parked ? 'rgba(224,54,44,.75)' : 'rgba(201,205,207,.25)') : (o.blocks ? 'rgba(245,197,24,.85)' : 'rgba(245,197,24,.25)'); ctx.fill();
   }
   ctx.strokeStyle = css('--lane'); ctx.lineWidth = 3 * r; ctx.lineCap = 'round'; ctx.beginPath();
   PATH.filter(p => p.t <= t).forEach((p, i) => { const [x, y] = P(p.x, p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
   for (const c of cws) {
     const [x, y] = P(...c.xy); ctx.fillStyle = vcol(c); ctx.beginPath(); ctx.arc(x, y, 9 * r, 0, 7); ctx.fill();
-    ctx.fillStyle = c.zone_blocked && !c.hidden ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, y + r);
+    ctx.fillStyle = verdict(c) === 'v-part' ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, y + r);
   }
   const [rx, ry] = P(R.x, R.y), half = D.hfov / 2 * Math.PI / 180;
   const g = ctx.createRadialGradient(rx, ry, 0, rx, ry, 16 * MS.s); g.addColorStop(0, 'rgba(245,197,24,.4)'); g.addColorStop(1, 'rgba(245,197,24,0)');
@@ -562,11 +646,11 @@ function drawScrub(t) {
   const ctx = scrub.getContext('2d'), X = s => 12 * r + (W - 24 * r) * Math.min(1, Math.max(0, s / dur));
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = 'rgba(242,241,236,.16)'; ctx.fillRect(X(0), H / 2 - 3 * r, X(dur) - X(0), 6 * r);
-  for (const c of cws) { ctx.fillStyle = 'rgba(245,197,24,.16)'; ctx.fillRect(X(c.t_pass - LEAD), H / 2 - 9 * r, X(c.t_pass + TAIL) - X(c.t_pass - LEAD), 18 * r); }
+  for (const c of cws) { ctx.fillStyle = 'rgba(245,197,24,.16)'; ctx.fillRect(X(c.tw0), H / 2 - 9 * r, X(c.tw1) - X(c.tw0), 18 * r); }
   ctx.fillStyle = css('--lane'); ctx.fillRect(X(0), H / 2 - 3 * r, X(t) - X(0), 6 * r);
   for (const c of cws) {
-    const x = X(c.t_pass); ctx.fillStyle = vcol(c); ctx.beginPath(); ctx.arc(x, H / 2, 10 * r, 0, 7); ctx.fill();
-    ctx.fillStyle = c.zone_blocked && !c.hidden ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, H / 2 + r);
+    const x = X(c.t_edge); ctx.fillStyle = vcol(c); ctx.beginPath(); ctx.arc(x, H / 2, 10 * r, 0, 7); ctx.fill();
+    ctx.fillStyle = verdict(c) === 'v-part' ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, H / 2 + r);
   }
   ctx.fillStyle = css('--paint'); ctx.fillRect(X(t) - 1.5 * r, 4 * r, 3 * r, H - 8 * r);
 }
@@ -581,21 +665,36 @@ function drawOverlay(t) {
   const r = devicePixelRatio || 1, b = ov.getBoundingClientRect(), W = Math.round(b.width * r), H = Math.round(b.height * r);
   if (ov.width !== W || ov.height !== H) { ov.width = W; ov.height = H; }
   const ctx = ov.getContext('2d'); ctx.clearRect(0, 0, W, H);
-  const boxes = D.overlays[Math.round(t * D.fps)] || [], sx = W / D.frame_size[0], sy = H / D.frame_size[1];
-  const act = inspecting(t), key = new Set(act ? act.approaches.flatMap(a => [...a.in_zone, ...a.blockers.map(b => b.id)]) : []);
+  const k = Math.round(t * D.fps), boxes = D.overlays[k] || [], sx = W / D.frame_size[0], sy = H / D.frame_size[1];
+  const act = inspecting(t), key = new Set(act ? act.ends.flatMap(e => e.blockers.map(b => b.id)) : []);
   ctx.font = `700 ${11 * r}px Overpass`; ctx.textBaseline = 'bottom';
   for (const [id, x0, y0, x1, y1] of boxes) {
     const o = byId[id]; let col, label = '';
-    if (o.group === 'vehicle') { col = o.parked ? css('--curb') : '#c9cdcf'; label = key.has(id) ? 'standing' : ''; }
-    else if (o.group === 'crosswalk') { const c = cws.find(c => c.id === id); if (!c) continue; col = vcol(c); label = `crossing ${c.n}`; }
+    if (o.group === 'vehicle') { col = o.parked ? css('--curb') : '#c9cdcf'; label = key.has(id) ? o.label : ''; }
     else if (o.footprint) { col = css('--line'); label = key.has(id) ? o.label : ''; }
     else continue;
-    ctx.globalAlpha = !act || key.has(id) || o.group === 'crosswalk' ? 1 : .45;
-    ctx.strokeStyle = col; ctx.lineWidth = (o.group === 'crosswalk' ? 2.5 : 1.8) * r; ctx.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy);
+    if (act && !key.has(id)) continue;                 // at a crossing, only what hides its sides
+    ctx.globalAlpha = act ? 1 : .5;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8 * r; ctx.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy);
     if (label) { const w = ctx.measureText(label).width + 8 * r; ctx.fillStyle = col; ctx.fillRect(x0 * sx, y0 * sy - 14 * r, w, 14 * r);
       ctx.fillStyle = col === css('--line') || col === '#c9cdcf' ? '#1e2022' : '#fff'; ctx.fillText(label, x0 * sx + 4 * r, y0 * sy - r); }
   }
   ctx.globalAlpha = 1;
+  // each side of the crossing ahead, as a 1 m tall box where someone about to cross would stand
+  if (act) for (const e of act.ends) {
+    const f = e.frames.find(f => f.k === k);
+    if (!f || !f.poly) continue;
+    const col = e.covered && f.seen != null && level(e) !== 'disputed' ? seenCol(f.seen) : '#c9cdcf', P = f.poly.map(([x, y]) => [x * sx, y * sy]);
+    const path = pts => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); };
+    ctx.globalAlpha = .3; ctx.fillStyle = col; path(P.slice(4)); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = col; ctx.lineWidth = 2.2 * r; path(P.slice(0, 4)); ctx.stroke(); path(P.slice(4)); ctx.stroke();
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(...P[i]); ctx.lineTo(...P[i + 4]); ctx.stroke(); }
+    if (e.covered && f.seen != null && level(e) !== 'disputed') {
+      const txt = `${e.side} side: ${f.seen >= CLEAR ? 'in view' : `${pct(1 - f.seen)} hidden`}`, top = P.slice(0, 4).reduce((a, p) => p[1] < a[1] ? p : a);
+      const w = ctx.measureText(txt).width + 8 * r; ctx.fillStyle = col; ctx.fillRect(top[0] - w / 2, top[1] - 18 * r, w, 14 * r);
+      ctx.fillStyle = f.seen >= CLEAR ? '#fff' : f.seen >= .5 ? '#1e2022' : '#fff'; ctx.fillText(txt, top[0] - w / 2 + 4 * r, top[1] - 5 * r);
+    }
+  }
 }
 
 // ---- controls ----
@@ -612,12 +711,13 @@ document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
   if (view === 'free') { orbit.target.copy(look); orbit.update(); }
 });
 $('cloud').onclick = () => { cloudPts.visible = !cloudPts.visible; $('cloud').setAttribute('aria-pressed', cloudPts.visible); };
+$('seen').onclick = () => { if (viewMesh) { viewMesh.visible = !viewMesh.visible; $('seen').setAttribute('aria-pressed', viewMesh.visible); } };
 addEventListener('keydown', e => {
   if (e.target.closest('button, input, select, textarea, a, .xi')) return;
   const t = vid.currentTime || 0;
   if (e.key === ' ') { e.preventDefault(); $('play').click(); }
-  else if (e.key === 'ArrowRight') { const c = cws.find(c => c.t_pass - LEAD - .3 > t + .05); if (c) { seek(c.t_pass - LEAD - .3); begin(); } }
-  else if (e.key === 'ArrowLeft') { const c = [...cws].reverse().find(c => c.t_pass - LEAD - .3 < t - .6); seek(c ? c.t_pass - LEAD - .3 : 0); }
+  else if (e.key === 'ArrowRight') { const c = cws.find(c => c.tw0 - .3 > t + .05); if (c) { seek(c.tw0 - .3); begin(); } }
+  else if (e.key === 'ArrowLeft') { const c = [...cws].reverse().find(c => c.tw0 - .3 < t - .6); seek(c ? c.tw0 - .3 : 0); }
 });
 
 function frame(now) {

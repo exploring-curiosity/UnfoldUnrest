@@ -37,7 +37,7 @@
 <body>
 <div class="wrap">
   <h1>Rides checked for daylighting</h1>
-  <p class="lede">Each ride is one clip, newest first. Open a ride to see its crosswalks, what blocks the view of oncoming traffic, and the street rebuilt in 3D.</p>
+  <p class="lede">Each ride is one clip, newest first. Open a ride to see, crossing by crossing, what the rider could and could not see on the way in, and the street rebuilt in 3D.</p>
   <div id="list"><p class="empty">Loading the rides…</p></div>
 </div>
 <script type="module">
@@ -48,9 +48,9 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 document.getElementById('list').innerHTML = runs.length ? runs.map(r => {
   const s = r.summary || {}, done = r.status === 'done';
   const state = done ? when(r.created) : r.status === 'failed' ? 'Failed' : `${r.status[0].toUpperCase() + r.status.slice(1)}${r.stage ? ': ' + r.stage : ''}`;
-  const what = done ? `${s.crosswalks ?? '?'} crosswalks, ${s.hidden ?? s.blocked ?? '?'} hide a person waiting to cross from oncoming traffic, ${s.zone_blocked ?? '?'} with something standing in the 20 ft before them. ${Math.round(s.distance ?? 0)} m in ${Math.round(s.duration ?? 0)} s.`
+  const what = done ? `${s.crosswalks ?? '?'} crossings, ${s.crossings_judged ?? '?'} judged from the rider's view; ${s.crossings_exposed ?? '?'} with a side hidden from the rider where stopping must start. ${Math.round(s.distance ?? 0)} m in ${Math.round(s.duration ?? 0)} s.`
              : r.status === 'failed' ? esc(r.error || '') : 'Results appear here when the run finishes.';
-  const cls = `run ${r.status}${done && (s.failing ?? s.blocked) ? ' bad' : ''}`;
+  const cls = `run ${r.status}${done && s.crossings_exposed ? ' bad' : ''}`;
   const body = `<span class="name">${esc(r.name)}</span><span class="state">${state}</span><span class="what">${what}</span>`;
   return done ? `<a class="${cls}" href="ride.html?run=${encodeURIComponent(r.id)}">${body}</a>` : `<div class="${cls}">${body}</div>`;
 }).join('') : '<p class="empty">No rides yet. Send a clip from the VM with vm_client.py submit.</p>';

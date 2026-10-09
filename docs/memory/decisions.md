@@ -38,3 +38,12 @@ LingBot depth on this footage flattens ~1 m objects (hedge planters, bollards co
 
 2026-10-09 - Viewer as a one-screen "sightline cockpit"
 Owner asked for a much cooler viewer and approved the cockpit design: the 3D street fills the screen and a director camera tells the story (fly-in, chase, slowed crossing inspection from behind the oncoming traffic, with STOP / SEEN distances painted on the lane). The camera video becomes a PiP, and the detailed list moves below the fold. Chose this over a split-panel dashboard because the demo story (a hedge hides the curb until 5 m, while stopping needs 9 m) reads best in one view.
+
+2026-10-09 - W&B by CoreWeave: a vision model checks the findings; Weave traces every run
+The hackathon's W&B offer is serverless inference. Owner picked a vision check plus Weave traces over a W&B metrics dashboard. The check targets the false findings the frames exposed (cars on another roadway, misplaced occluders): one Qwen3.8-27B call per exposed crossing end, with two outlined frames. A missing key fails the run (no silent skip).
+
+2026-10-09 - Daylighting measured from the rider's view, read off the video
+Owner: the biker is the subject. Per crossing, each side (a 3 m x 3.5 m patch where someone about to cross stands, 1 m tall) is cast into every frame on the way in and compared with the rebuilt depth (Street.sees): seen or covered by something nearer. Verdict at the stopping distance (1.5 s + 3 m/s^2): hidden <50%, partly <90%, in view >=90%. Area, not a single point (a point flipped with 1 m of placement). Judged only within 10.5 m (open road ahead reads 94-96% seen at 10 m, ~70% at 13 m) and not while turning >35 deg. Replaces the pedestrian waiting-point sightlines and the "car in the 20 ft" claims.
+
+2026-10-09 - Camera roll forced to zero in Street.mount
+The pooled road plane leaned ~9 deg; drawn on the frames, the model's horizon tilted and its verticals leaned while poles stand upright. A handlebar camera does not roll against the road, so the fitted normal's sideways part is dropped.

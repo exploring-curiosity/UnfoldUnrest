@@ -21,7 +21,7 @@ from . import ROOT
 
 RUNS = ROOT / "runs"
 ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,40}$")
-STAGES = ["frames", "geometry", "detect", "export"]
+STAGES = ["frames", "geometry", "detect", "export", "review"]
 RESULTS = ("run.json", "log.txt", "meta.json", "dets.json")     # plus everything under app/
 SHARED = ("viewer/ride.html", "viewer/runs.html")                # the viewer travels with the results
 

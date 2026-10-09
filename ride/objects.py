@@ -12,18 +12,23 @@ standing    a vehicle cluster whose placements stay within PARKED_SPREAD m while
             PARKED_PASS m past it: it did not move while we did (parked, or waiting at a light: one pass cannot tell)
 crosswalk   each crosswalk detection's box is cast onto the ground as a quadrilateral; a cluster's crosswalk is the
             minimum-area rectangle around the middle 80% of its corners
-daylighting a person waiting at the curb to cross and the traffic coming toward the crossing must see each other.
-            California AB 413 keeps the 20 ft (6.1 m) before a crosswalk on the vehicle approach side clear of
-            stopped vehicles; NACTO recommends 20-25 ft. For each crosswalk and each direction of travel:
-              waiting point   the curb end of the crosswalk on that direction's right (the curb its traffic passes)
-              approach lane   that direction's lane centre, upstream of the crosswalk, out to SIGHT_MAX m
-              sightlines      from the waiting point to points along the approach lane; a sightline is hidden when
-                              it crosses an occluder: a standing vehicle or furniture taller than OCCLUDE_H m
-              approach zone   the 20 ft strip upstream of the crosswalk along that curb; anything standing in it
-              seen from       how far up the lane the waiting person is visible without a break; compared with the
-                              stopping distance at the rider's own speed there (reaction REACT s, braking DECEL m/s^2).
-                              Where the ride starts or ends at the crossing the lane was not seen that far ("covered"
-                              false): only what stands in the zone counts there
+the rider's view  daylighting from the saddle: riding up to a crossing, the rider has to see whoever could come into
+            it from either side (a person, a bike, a car) early enough to stop. A parked or stopped vehicle or tall
+            street furniture just before the crossing hides them; California AB 413 and NACTO keep the 20 ft (6.1 m)
+            before a crosswalk clear for this. The video is the rider's view, so what hides what is read from it:
+              watch points    each end of the crossing (left and right of the ride), STEP_IN m in from its near
+                              edge and OUT m past its end, TARGET_H m above the road (a child, a person on a bike, a
+                              car's bonnet)
+              seen            per frame, the point is cast into the camera and compared with the rebuilt depth
+                              there: seen when the depth reaches it, hidden when something nearer covers it
+                              (Street.sees). The rebuilt depth matches the road's true distance to ~13 m and falls
+                              short beyond; the open road ahead reads as seen 94-96% of the time at 10 m, so only
+                              the last WINDOW m before the crossing are judged, and only at stopping distances
+                              inside that
+              seen from       how far before the crossing the end comes into view and stays in view, against the
+                              stopping distance at the rider's speed there (reaction REACT s, braking DECEL m/s^2).
+                              Exposed when it comes into view later than that
+              hidden by       the detected object whose box covers the point in the frames where it is hidden
 """
 from __future__ import annotations
 
@@ -43,9 +48,14 @@ MIN_SEEN = {"vehicle": 3, "person": 3, "bicycle": 3, "bollard": 3, "fire hydrant
 VEHICLES = {"car", "van", "truck", "bus"}
 CAR_L, CAR_W = 4.6, 1.9
 PARKED_SPREAD, PARKED_PASS = 1.6, 4.0
-DAYLIGHT = 6.1          # m (20 ft): the approach-side zone
-SIGHT_MAX = 30.0        # m: the longest approach checked (the rebuilt street rarely reaches further)
-OCCLUDE_H = .9          # m (3 ft): shorter things do not hide a person from a driver or rider
+DAYLIGHT = 6.1          # m (20 ft): the stretch before a crossing that daylighting keeps clear
+WINDOW = 10.5           # m before the crossing that are judged: the road ahead reads as seen 94-96% of the time at
+                        # 10 m, ~70% at 13 m (depth falls short there), so a reading beyond ~10 m is not trusted
+TARGET_H = 1.0          # m: the height the rider must see at the crossing's ends
+AREA_IN, AREA_OUT = .5, 2.5     # m: each end's watch area, from just inside the crossing's end to beyond it
+AREA_BEFORE, AREA_INTO = 1.0, 3.0   # m: and from just before the crossing's near edge into it
+CLEAR = .9              # an end is in view when the rider sees this share of its area
+TURN_MAX = 35.0         # degrees: turning harder than this on the way in, the camera is not looking where the rider is
 ON_PATH = 1.2           # m: furniture placed this close to where we rode is misplaced
 REACT, DECEL = 1.5, 3.0  # s, m/s^2: stopping distance = v * REACT + v^2 / (2 DECEL)
 FURNITURE = {"planter", "hedge", "bus shelter", "kiosk", "utility box"}          # can hide a person
@@ -245,64 +255,100 @@ def along_path(cam, j, step=.25):
     return np.stack([np.interp(ss, s, P[:, 0]), np.interp(ss, s, P[:, 1])], 1), ss, s[j]
 
 
-def approaches(cw, cam, times, occluders):
-    """The daylighting check of one crosswalk: per direction of travel, its waiting point, approach lane, sightlines,
-    20 ft approach zone and what stands in it (see the module docstring). The approach lanes follow the ride: coming
-    with the ride, the lane is the path the rider took into the crossing; against it, the path beyond the crossing,
-    one lane over."""
+def rider_view(cw, st, cam, times, objs):
+    """What the rider saw of the crossing's two ends on the way in (see the module docstring)."""
     R = np.asarray(cw["rect"], np.float64); c = R.mean(0)
-    j = int(np.argmin(np.linalg.norm(cam[:, :2] - c, axis=1)))
     v = street_axis(c, cam)
-    u = np.array([-v[1], v[0]])                       # across the road, to the left of the ride
-    hv, hu = np.abs((R - c) @ v).max(), np.abs((R - c) @ u).max()
-    i0, i1 = max(j - 3, 0), min(j + 3, len(cam) - 1)
-    speed = max(float(np.linalg.norm(cam[i1, :2] - cam[i0, :2]) / max(times[i1] - times[i0], 1e-6)), 3.0)
+    u = np.array([-v[1], v[0]])                                           # across the road, to the ride's left
+    path, arc, _ = along_path(cam, 0)
+    j = int(np.argmin(np.linalg.norm(path - c, axis=1)))
+    s_edge = float(arc[j] - np.abs((R - c) @ v).max())                    # the crossing's near edge along the ride
+    across = (R - path[j]) @ u                                             # its corners, measured from the ride line
+    s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(cam[:, :2], axis=0), axis=1))])
+    d = s_edge - s                                                         # each frame's distance to the crossing
+    ks = [k for k in range(len(cam)) if 0 < d[k] <= WINDOW + .5]
+    if len(ks) >= 2:
+        speed = (s[ks[-1]] - s[ks[0]]) / max(times[ks[-1]] - times[ks[0]], 1e-6)
+    else:
+        jj = int(np.argmin(np.abs(d)))
+        i0, i1 = max(jj - 3, 0), min(jj + 3, len(cam) - 1)
+        speed = (s[i1] - s[i0]) / max(times[i1] - times[i0], 1e-6)
+    speed = max(float(speed), 3.0)
     need = stopping(speed)
-    reach = min(SIGHT_MAX, max(15.0, 1.4 * need))
-    path, arc, sj = along_path(cam, j)
-    sj = float(arc[np.argmin(np.linalg.norm(path - c, axis=1))])          # where the ride is closest to the crossing
-    other = float(np.clip(.75 * hu, 1.0, 3.5))       # the opposite lane's offset from the rider's line
+    hd = [np.arctan2(*(cam[min(k + 2, len(cam) - 1), 1::-1] - cam[max(k - 2, 0), 1::-1])) for k in ks] if ks else [0.0]
+    turn = float(np.degrees(np.ptp(np.unwrap(hd))))                       # how much the bike turned on the way in
+    boxes = {}
+    for o in objs:
+        if o["group"] in ("vehicle", "tree", "pole", "person", "bicycle") or o["group"] in FURNITURE:
+            for k, *b in o["dets"]:
+                boxes.setdefault(k, []).append((o, b))
     out = []
-    for sgn, name in ((1, "with the ride"), (-1, "against the ride")):
-        fwd = sgn * v
-        right = np.array([fwd[1], -fwd[0]])            # traffic keeps right: its curb is on this side
-        wait = c + right * (hu + .3)
-        s_edge = sj - sgn * hv                         # the crosswalk's edge on this direction's approach side
-        ds = np.arange(1.0, reach + .01, 1.0)
-        sel = s_edge - sgn * ds
-        ok = (sel >= arc[0]) & (sel <= arc[-1])        # the rebuilt street ends where the ride does
-        ds, sel = ds[ok], sel[ok]
-        lane = np.stack([np.interp(sel, arc, path[:, 0]), np.interp(sel, arc, path[:, 1])], 1)
-        if sgn < 0:                                    # one lane over, to the left of the ride
-            tang = np.gradient(lane, axis=0) if len(lane) > 1 else np.tile(-v, (len(lane), 1))
-            tang /= np.maximum(np.linalg.norm(tang, axis=1, keepdims=True), 1e-9)
-            lane = lane + np.stack([tang[:, 1], -tang[:, 0]], 1) * other
-        rays = []
-        for dd, to in zip(ds, lane):
-            dirn = (to - wait) / max(np.linalg.norm(to - wait), 1e-9)
-            by = [o["id"] for o in occluders if seg_hits_poly(wait + dirn * .5, to, o["footprint"])]
-            rays.append(dict(d=float(dd), to=to.round(2).tolist(), clear=not by, by=by))
-        covered = bool(len(ds) and ds[-1] >= need)     # the ride saw this lane out to the stopping distance
-        seen = 0.0
-        for r in rays:
-            if not r["clear"]:
+    for side, end in (("right", min(across.min(), -1.0)), ("left", max(across.max(), 1.0))):
+        sg = np.sign(end)
+        offs = np.abs(end) + np.arange(-AREA_IN, AREA_OUT + .01, .5)       # across: just inside the end to beyond it
+        alongs = np.arange(-AREA_BEFORE, AREA_INTO + .01, .5)             # along: just before the crossing, into it
+        A = []
+        for al in alongs:
+            q = np.array([np.interp(s_edge + al, arc, path[:, 0]), np.interp(s_edge + al, arc, path[:, 1])])
+            A += [[*(q + sg * u * o_), TARGET_H] for o_ in offs]
+        A = np.array(A)
+        corners = A[[0, len(offs) - 1, len(A) - 1, len(A) - len(offs)]]
+        rows = []
+        for k in ks:
+            r = st.sees(k, A)
+            n_in = int((r >= 0).sum())
+            xy, zc = st.project(k, np.r_[corners, corners * [1, 1, 0]])   # the area's top (TARGET_H) and its base
+            ok = np.isfinite(xy).all() and (zc > 0).all()
+            rows.append(dict(k=k, d=float(d[k]), r=r, frac=(float((r == 1).sum()) / n_in) if n_in else None,
+                             counted=n_in >= .6 * len(A),
+                             poly=[[round(float(x), 1), round(float(y), 1)] for x, y in xy] if ok else None))
+        cnt = [x for x in rows if x["counted"]]
+        fr_ = [x["frac"] for x in cnt]
+        sm = [float(np.median(fr_[max(i - 1, 0):i + 2])) for i in range(len(fr_))]   # one noisy frame is not a verdict
+        for x, f in zip(cnt, sm):
+            x["smooth"] = f
+        clear_from = None
+        for x in sorted(cnt, key=lambda x: x["d"]):                       # from the crossing outward
+            if x["smooth"] < CLEAR:
                 break
-            seen = r["d"]
-        edge = np.array([np.interp(s_edge, arc, path[:, 0]), np.interp(s_edge, arc, path[:, 1])])
-        lo, hi = max(hu * .5, hu - 2.5), hu + 1.5      # the curb lane (parking) and the curb's edge (furniture)
-        zone = [edge + right * lo, edge + right * hi, edge + right * hi - fwd * DAYLIGHT, edge + right * lo - fwd * DAYLIGHT]
-        in_zone = [o["id"] for o in occluders if poly_dist(zone, o["footprint"]) == 0]
-        counts = {}
-        for r in rays:
-            for i in r["by"]:
-                counts[i] = counts.get(i, 0) + 1
-        out.append(dict(direction=name, waiting=wait.round(2).tolist(), edge=edge.round(2).tolist(),
-                        lane=lane.round(2).tolist(), rays=rays, zone=np.round(zone, 2).tolist(), in_zone=in_zone,
-                        seen_from_m=seen, needed_m=round(need, 1), speed_kmh=round(speed * 3.6, 1),
-                        reach_m=float(ds[-1]) if len(ds) else 0.0, covered=covered,
+            clear_from = x["d"]
+        at_stop = min(cnt, key=lambda x: abs(x["d"] - need)) if cnt else None
+        if need > WINDOW:
+            why = f"at {speed * 3.6:.0f} km/h stopping takes {need:.0f} m, farther out than the rebuild can judge ({WINDOW:.0f} m)"
+        elif at_stop is None or abs(at_stop["d"] - need) > 1.5:
+            why = "the ride starts too close to this crossing" if d[0] < need + 1.5 \
+                else "the camera did not face this side of the crossing from the stopping distance"
+        elif turn > TURN_MAX:
+            why = f"the bike was turning ({turn:.0f} degrees) on the way in"
+        else:
+            why = None
+        covered = why is None
+        counts, unnamed = {}, 0
+        for x in cnt:
+            if not ((clear_from or 0) < x["d"] <= need + 2):
+                continue
+            xy, _ = st.project(x["k"], A[x["r"] == 0])
+            for px, py in xy:
+                hits = [(np.linalg.norm(np.asarray(o["xy"]) - cam[x["k"], :2]), o["id"]) for o, b in boxes.get(x["k"], [])
+                        if b[0] <= px <= b[2] and b[1] <= py <= b[3]]
+                if hits:
+                    oid = min(hits)[1]
+                    counts[oid] = counts.get(oid, 0) + 1
+                else:
+                    unnamed += 1
+        exposed = bool(covered and at_stop["smooth"] < CLEAR)
+        out.append(dict(side=side, area=corners[:, :2].round(2).tolist(),
+                        clear_from_m=None if clear_from is None else round(clear_from, 1),
+                        needed_m=round(need, 1), speed_kmh=round(speed * 3.6, 1), covered=covered, why=why, exposed=exposed,
+                        seen_at_stop=round(at_stop["smooth"], 2) if at_stop else None,
+                        stop_k=at_stop["k"] if at_stop else None, stop_d=round(at_stop["d"], 1) if at_stop else None,
+                        clear_k=next((x["k"] for x in cnt if x["d"] == clear_from), None),
                         blockers=[dict(id=i, n=n) for i, n in sorted(counts.items(), key=lambda kv: -kv[1])],
-                        hidden=bool(covered and seen < need), zone_blocked=bool(in_zone)))
-    return out
+                        unnamed=unnamed,
+                        frames=[dict(k=x["k"], d=round(x["d"], 1), seen=None if x["frac"] is None else round(x.get("smooth", x["frac"]), 2),
+                                     counted=x["counted"], poly=x["poly"]) for x in rows]))
+    edge = np.array([np.interp(s_edge, arc, path[:, 0]), np.interp(s_edge, arc, path[:, 1])])
+    return out, edge.round(2).tolist(), round(s_edge, 2)
 
 
 def on_path(poly, cam, step=.25):
@@ -315,7 +361,7 @@ def on_path(poly, cam, step=.25):
 def label(o):
     if o["group"] == "vehicle":
         kind = "bus" if "bus" in o["kinds"] else "truck" if "truck" in o["kinds"] else "car"
-        return ("standing " if o.get("parked") else "moving ") + kind
+        return ("stopped " if o.get("parked") else "moving ") + kind      # stopped: parked, or waiting in traffic
     return o["group"]
 
 
@@ -357,21 +403,24 @@ def analyse(st, dets, times, log=print):
     objs = merge_crosswalks(merge_vehicles(objs, cam))
     for o in objs:
         o["label"] = label(o)
-    occluders = [o for o in objs if (o["group"] == "vehicle" and o["parked"]) or
-                 (o["group"] in FURNITURE and o["height"] >= OCCLUDE_H)]
-    for o in occluders:
-        o["occluder"] = True
     byid = {o["id"]: o for o in objs}
+    path, arc, _ = along_path(cam, 0)
     for cw in [o for o in objs if o["group"] == "crosswalk"]:
-        cw["approaches"] = approaches(cw, cam, times, occluders)
-        cw["hidden"] = any(a["hidden"] for a in cw["approaches"])            # a waiting person is seen too late
-        cw["zone_blocked"] = any(a["zone_blocked"] for a in cw["approaches"])  # something stands in the 20 ft
-        cw["daylit"] = not (cw["hidden"] or cw["zone_blocked"])
-        for a in cw["approaches"]:
-            log(f"crosswalk {cw['id']} ({cw['size'][0]}x{cw['size'][1]} m, t {cw['t0']:.1f}-{cw['t1']:.1f}s) {a['direction']}: "
-                f"seen from {a['seen_from_m']:.0f} m, needs {a['needed_m']} m at {a['speed_kmh']} km/h; "
-                f"in the 20 ft zone {[byid[i]['label'] for i in a['in_zone']]}; "
-                f"hidden by {[(byid[b['id']]['label'], b['n']) for b in a['blockers']]}")
+        cw["ends"], cw["edge"], s_edge = rider_view(cw, st, cam, times, objs)
+        for e in cw["ends"]:
+            for b in e["blockers"]:
+                o = byid[b["id"]]
+                o["blocks"] = True
+                if "footprint" in o:                       # how far before the crossing it stands
+                    s_o = max(float(arc[np.argmin(np.linalg.norm(path - q, axis=1))]) for q in np.asarray(o["footprint"]))
+                    b["before_m"] = round(s_edge - s_o, 1)
+                    b["in_20ft"] = bool(-1.0 <= s_edge - s_o <= DAYLIGHT)
+        cw["exposed"] = any(e["exposed"] for e in cw["ends"])
+        for e in cw["ends"]:
+            log(f"crosswalk {cw['id']} ({cw['size'][0]}x{cw['size'][1]} m, t {cw['t0']:.1f}-{cw['t1']:.1f}s) {e['side']} end: "
+                f"in view from {e['clear_from_m']} m, {e['seen_at_stop']} of it seen at {e['stop_d']} m; "
+                f"stopping needs {e['needed_m']} m at {e['speed_kmh']} km/h; {'judged' if e['covered'] else 'not judged: ' + e['why']}; "
+                f"hidden by {[(byid[b['id']]['label'], b['n'], b.get('before_m')) for b in e['blockers']]} + {e['unnamed']} unnamed")
     return items, objs
 
 
@@ -383,8 +432,8 @@ def run(out, log=print):
     items, objs = analyse(st, dets, meta["times"], log=log)
     from collections import Counter
     log("objects: " + str(Counter(o["group"] for o in objs)) +
-        f"; standing vehicles {sum(o.get('parked', False) for o in objs)}; occluders "
-        + str(Counter(o["label"] for o in objs if o.get("occluder"))))
+        f"; stopped vehicles {sum(o.get('parked', False) for o in objs)}; hiding a crossing's end "
+        + str(Counter(o["label"] for o in objs if o.get("blocks"))))
     return st, meta, fr, items, objs
 
 

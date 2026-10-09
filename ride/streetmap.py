@@ -90,6 +90,9 @@ class Street:
         Q = P[np.abs((P - a) @ n) < thr]; c = Q.mean(0)
         n = np.linalg.svd(Q - c, full_matrices=False)[2][-1]
         n = n if n[1] < 0 else -n
+        # no roll: a handlebar camera does not lean against the road it rides on. The fitted plane leans ~9 deg on the
+        # biker clip while the frames' poles and trees stand upright, so the depth's sideways skew is not trusted
+        n = np.array([0.0, n[1], n[2]]) / np.linalg.norm(n[1:])
         h = np.array([np.median(-(q @ n)[np.abs(-(q @ n) / np.median(-(q @ n)) - 1) < .15]) for q in Pk])
         return n, h
 
@@ -110,6 +113,48 @@ class Street:
 
     def cam_plan(self):
         return self.plan(self.C)
+
+    def world(self, P):
+        """Plan points (x, y, z metres) -> world points (the inverse of plan)."""
+        P = np.atleast_2d(np.asarray(P, np.float64)) / self.scale
+        t = P[:, 2] - self.d - self.o @ self.n
+        return self.o + np.outer(P[:, 0], self.ex) + np.outer(P[:, 1], self.ey) + np.outer(t, self.n)
+
+    def world_k(self, k, P):
+        """Plan points (x, y, height) -> world points, the height taken above frame k's own road plane (the plan's
+        global plane drifts by up to ~1.5 m from the road under the bike over a ride)."""
+        P = np.atleast_2d(np.asarray(P, np.float64))
+        X0 = self.world(np.c_[P[:, :2], np.zeros(len(P))])
+        t = -(X0 @ self.nk[k] + self.dk[k]) / (self.n @ self.nk[k])
+        return X0 + np.outer(t, self.n) + np.outer(P[:, 2] / self.scale, self.nk[k])
+
+    def project(self, k, P):
+        """Plan points (x, y, height over frame k's road) -> frame k pixels (x, y) and their depth along the camera's
+        axis (model units, <= 0 behind)."""
+        Xc = (self.world_k(k, P) - self.C[k]) @ self.R[k]
+        z = Xc[:, 2]
+        zs = np.where(z > 1e-6, z, np.nan)
+        u, v = Xc[:, 0] / zs * self.fx[k] + G / 2, Xc[:, 1] / zs * self.fy[k] + G / 2
+        return np.stack([u * self.W / G, v * self.H / G], 1), z
+
+    def sees(self, k, P, tol=.08, margin=.6, patch=2):
+        """Can frame k's camera see plan points P? 1 seen, 0 hidden (the camera's depth there stops short of the
+        point: something nearer covers it), -1 out of the frame. A point counts as seen when the far end of the
+        depth in a small patch around its pixel reaches it, so a thin pole does not hide a person."""
+        xy, z = self.project(k, P)
+        out = np.full(len(z), -1, np.int8)
+        u = np.floor(xy[:, 0] * G / self.W).astype(np.int64, copy=False) if np.isfinite(xy).all() else \
+            np.where(np.isfinite(xy[:, 0]), np.floor(np.nan_to_num(xy[:, 0]) * G / self.W), -1).astype(np.int64)
+        v = np.where(np.isfinite(xy[:, 1]), np.floor(np.nan_to_num(xy[:, 1]) * G / self.H), -1).astype(np.int64)
+        inside = (z > 0) & (u >= patch) & (u < G - patch) & (v >= patch) & (v < G - patch)
+        if inside.any():
+            D = self.depth[k]
+            ii = np.nonzero(inside)[0]
+            far = np.max(np.stack([D[v[ii] + dv, u[ii] + du] for dv in range(-patch, patch + 1)
+                                   for du in range(-patch, patch + 1)], 0), 0)
+            reach = z[ii] * (1 - tol) - margin / self.scale
+            out[ii] = (far >= reach).astype(np.int8)
+        return out
 
     def ray_ground(self, k, x, y):
         """Frame pixels (x, y) of frame k -> world points where their rays meet the ground (nan if they do not)."""

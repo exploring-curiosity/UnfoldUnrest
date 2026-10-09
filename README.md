@@ -3,7 +3,8 @@
 A first-person bike clip goes in. Out come the street rebuilt in 3D, its crosswalks, the parked cars and street furniture
 around them, and whether anything hides a person waiting to cross from the traffic coming toward the crossing.
 
-The Mac runs the pipeline (LingBot-Map for 3D, OWLv2 for detection) behind a small service. The VM reaches it through
+The Mac runs the pipeline (LingBot-Map for 3D, OWLv2 for detection, then a vision model on W&B Inference that checks
+each finding against the frames) behind a small service. The VM reaches it through
 a Cloudflare tunnel: it sends clips in and pulls every run's results back, so the Mac and the VM each keep a full copy.
 
 ```
@@ -18,13 +19,17 @@ The VM always starts the connection; the Mac never reaches the VM.
 Needs Python with `fastapi`, `uvicorn`, `python-multipart`, `av`, `torch` and `transformers`, plus `cloudflared`
 (`brew install cloudflared`). LingBot-Map is loaded from the ElideDB checkout set in `ride/__init__.py`.
 
-1. Put a token in `.env` (it is gitignored):
+1. Put these in `.env` (it is gitignored):
 
    ```
    SERVICE_TOKEN=<a long random string>
+   WANDB_API_KEY=<the team's W&B key>
+   WANDB_PROJECT=<team>/<project>
    ```
 
-   For example, generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   Generate the token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. The W&B key is the
+   hackathon's `WANDB_` key (on the VM in `/config/<team>.config`). A run fails at its start if either W&B value is
+   missing.
 
 2. Start the service:
 
@@ -64,13 +69,26 @@ python3 vm_client.py health
 | `python3 vm_client.py submit ride.mp4 --name "west st" --wait` | Upload the clip in 64 MB pieces, run it, wait, then sync |
 | `python3 vm_client.py submit ride.mp4 --source '{"vast_video_id": "..."}'` | Same, recording where the clip came from |
 | `python3 vm_client.py runs` | List every run with its status and findings |
-| `python3 vm_client.py rerun <run id> --from export` | Run again from a stage (`frames`, `geometry`, `detect`, `export`) with the current code |
+| `python3 vm_client.py rerun <run id> --from export` | Run again from a stage (`frames`, `geometry`, `detect`, `export`, `review`) with the current code |
 | `python3 vm_client.py sync` | Pull results into `ride_mirror/` (only files whose hash changed) |
 | `python3 vm_client.py sync --all` | Also pull frames, depth and the clip |
 | `python3 vm_client.py watch --every 30` | Sync every 30 s |
 
 Each file is checked against its sha256 before it replaces the old copy. Runs still uploading, queued or running are
 skipped until they finish. Each sync is logged to `ride_mirror/sync_log.jsonl`.
+
+## W&B by CoreWeave
+
+- **Checking the findings (`review` stage):** for each crossing end the 3D check calls exposed, the vision model
+  `Qwen/Qwen3.8-27B` on W&B Inference (`https://api.inference.wandb.ai/v1`) gets two frames with the end's watch area
+  outlined: one at stopping distance, and one where the 3D check says the area comes into view. It answers whether
+  the area is visible, what hides it, whether that stands between the rider and the area, and whether the claim holds.
+  The answer is stored next to the 3D numbers in `app/ride.json` (`review` on each end, `confirmed` on each crossing,
+  and `checked`, `confirmed`, `rejected` in the stats).
+- **Traces (Weave):** every run is traced to the Weave project in `WANDB_PROJECT`: each stage with its inputs (including
+  the clip's `source`, such as the VAST query), outputs and timing, and every prompt, image and answer of the vision
+  model. Open https://wandb.ai/<team>/<project>/weave and filter by the `run_id` attribute.
+- To check one run again with the vision model only: `python3 vm_client.py rerun <run id> --from review`.
 
 ## Viewing the results
 
@@ -93,7 +111,7 @@ a URL.
 | `POST /api/runs` | `{"name", "filename", "source"}`: a new run waiting for its clip |
 | `PUT /api/runs/{id}/clip?offset=N` | One piece of the clip at byte N (at most 95 MB per request; Cloudflare caps 100 MB) |
 | `POST /api/runs/{id}/start` | The clip is complete: queue the run |
-| `POST /api/runs/{id}/rerun?start=STAGE` | Run again from a stage |
+| `POST /api/runs/{id}/rerun?start=STAGE` | Run again from a stage (`frames`, `geometry`, `detect`, `export`, `review`) |
 | `GET /api/runs`, `GET /api/runs/{id}` | Run records |
 | `GET /api/manifest?all=1` | Every run's files with sizes and sha256 |
 | `GET /runs/{id}/{path}`, `GET /viewer/{path}` | Files, laid out as on disk |
@@ -101,7 +119,7 @@ a URL.
 ## Layout
 
 ```
-ride/          pipeline: frames -> geometry -> detect -> export; service.py, runs.py
+ride/          pipeline: frames -> geometry -> detect -> export -> review; service.py, runs.py
 viewer/        runs.html (list), ride.html (one run)
 vm_client.py   the VM side
 runs/<id>/     one run: clip, run.json, log.txt, app/ (ride.json, video, map, evidence)   [gitignored]
