@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crosswalk Sightlines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  /* road paint: asphalt, white line, red curb (no stopping), green lane, yellow centre line */
+  :root {
+    --night: #121517; --asphalt: #2e3133; --asphalt-2: #373b3e; --asphalt-3: #44494c;
+    --paint: #f2f1ec; --muted: #a6aaac; --lane: #2fa36b; --curb: #e0362c; --line: #f5c518;
+    --glass: rgba(16, 19, 21, .76); --edge: rgba(242, 241, 236, .10);
+    --r-s: 4px; --r-m: 10px;
+    --read-bg: #2e3133; --read-ink: #f2f1ec; --read-muted: #a6aaac; --read-card: #373b3e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --read-bg: #e9e7e1; --read-ink: #1f2224; --read-muted: #5d6265; --read-card: #f6f5f1; }
+  }
+  :root[data-theme="light"] { --read-bg: #e9e7e1; --read-ink: #1f2224; --read-muted: #5d6265; --read-card: #f6f5f1; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--night); color: var(--paint); font: 400 16px/1.5 "Overpass", system-ui, sans-serif; }
+  button { font: 600 14px/1 "Overpass", sans-serif; color: var(--paint); background: rgba(55, 59, 62, .85); border: 1px solid var(--asphalt-3);
+           border-radius: var(--r-s); padding: 9px 12px 7px; cursor: pointer; }
+  button:hover { background: var(--asphalt-3); }
+  button[aria-pressed="true"] { background: var(--paint); color: var(--night); border-color: var(--paint); }
+  button:focus-visible, a:focus-visible, .xi:focus-visible, canvas:focus-visible { outline: 3px solid var(--line); outline-offset: 2px; }
+  a { color: inherit; }
+
+  /* ---- the cockpit: the rebuilt street fills the screen, the rest sits on it ---- */
+  .cockpit { position: relative; height: 100svh; min-height: 600px; overflow: hidden;
+             background: linear-gradient(180deg, #0b131c 0%, #182638 40%, #33384a 58%, #1b1f22 72%, #121517 100%); }
+  #stage { position: absolute; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .scrim { position: absolute; inset: 0 0 auto 0; height: 260px; pointer-events: none;
+           background: linear-gradient(180deg, rgba(8, 10, 12, .78), rgba(8, 10, 12, 0)); }
+  .head { position: absolute; left: 28px; top: 22px; max-width: min(640px, 50vw); }
+  .back { color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: none; }
+  .back:hover { color: var(--paint); }
+  .head h1 { font-weight: 800; font-size: clamp(28px, 3.1vw, 46px); line-height: 1.04; letter-spacing: -.012em; margin: 8px 0 10px;
+             text-shadow: 0 2px 22px rgba(0, 0, 0, .55); }
+  .head .count { color: var(--curb); }
+  .head .sub { font-weight: 600; font-size: clamp(15px, 1.25vw, 18px); line-height: 1.38; margin: 0 0 16px; color: #dcdbd5; max-width: 50ch;
+               text-shadow: 0 1px 12px rgba(0, 0, 0, .6); }
+  .go { font-size: 16px; padding: 12px 18px 10px; background: var(--paint); color: var(--night); border-color: var(--paint); }
+  .go:hover { background: #fff; }
+  .head h1, .head .sub { transition: font-size .5s ease, opacity .4s ease, margin .5s ease; }
+  .playing .head h1 { font-size: clamp(20px, 1.7vw, 26px); }
+  .playing .head .sub { font-size: 14px; opacity: .85; max-width: 46ch; }
+
+  .pip { position: absolute; right: 22px; top: 22px; width: clamp(260px, 25vw, 430px); margin: 0; border-radius: var(--r-m); overflow: hidden;
+         background: #000; border: 1px solid var(--edge); box-shadow: 0 14px 44px rgba(0, 0, 0, .5); }
+  .pip .frame { position: relative; aspect-ratio: 16 / 9; }
+  .pip video, .pip canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pip figcaption { position: absolute; left: 10px; top: 8px; font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 4px #000; }
+
+  .card { position: absolute; left: 28px; bottom: 86px; width: min(450px, calc(100vw - 56px)); padding: 14px 16px 12px 16px;
+          background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          border-left: 8px solid var(--asphalt-3); border-radius: 0 var(--r-m) var(--r-m) 0; box-shadow: 0 14px 40px rgba(0, 0, 0, .35); }
+  .card.v-hidden { border-left-color: var(--curb); }
+  .card.v-zone { border-left-color: var(--line); }
+  .card.v-clear { border-left-color: var(--lane); }
+  .card.fresh { animation: slide .45s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes slide { from { transform: translateY(14px); opacity: 0; } }
+  .ch { display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center; }
+  .disc { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 20px; color: #fff;
+          background: var(--asphalt-3); padding-top: 3px; }
+  .v-hidden .disc { background: var(--curb); }
+  .v-zone .disc { background: var(--line); color: var(--night); }
+  .v-clear .disc { background: var(--lane); }
+  .ch h2 { font-size: 19px; line-height: 1.2; font-weight: 800; margin: 0; }
+  .ch p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .aps { margin-top: 12px; display: grid; gap: 10px; }
+  .ap-h { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .ap-h span:last-child { color: var(--muted); font-weight: 400; text-align: right; }
+  .meter { position: relative; height: 10px; border-radius: 5px; background: rgba(242, 241, 236, .12); }
+  .meter .seen { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--lane); }
+  .meter .gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--curb) 0 6px, #a3241c 6px 12px); border-radius: 0 5px 5px 0; }
+  .meter .stop { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; background: var(--paint); border-radius: 2px; }
+  .meter.off { background: repeating-linear-gradient(90deg, rgba(242, 241, 236, .14) 0 8px, transparent 8px 14px); }
+  .why { margin: 6px 0 0; font-size: 13px; color: #d4d3cd; }
+  .next { margin: 0; font-weight: 800; font-size: 19px; }
+  .hint { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+  .mini { position: absolute; right: 22px; bottom: 86px; width: clamp(220px, 19vw, 300px); height: clamp(150px, 13vw, 200px);
+          border-radius: var(--r-m); border: 1px solid var(--edge); background: rgba(16, 19, 21, .66); }
+
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; min-height: 66px; display: flex; align-items: center; gap: 14px; padding: 10px 22px;
+         background: linear-gradient(0deg, rgba(8, 10, 12, .94), rgba(8, 10, 12, .62)); }
+  #play { width: 92px; }
+  #scrub { flex: 1; min-width: 160px; height: 40px; cursor: pointer; display: block; }
+  .clock { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; min-width: 92px; text-align: right; }
+  .views { display: flex; gap: 4px; flex-wrap: wrap; }
+  .views button { padding: 8px 10px 6px; font-size: 13px; }
+  .speed { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); font-weight: 800; font-size: 13px; color: var(--night);
+           background: var(--line); border-radius: 999px; padding: 5px 12px 3px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .speed.on { opacity: 1; }
+
+  /* ---- below the fold: how it works and every crossing ---- */
+  .read { background: var(--read-bg); color: var(--read-ink); }
+  .read-wrap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 64px; }
+  .read h2 { font-size: 24px; font-weight: 800; margin: 0 0 10px; }
+  .read p { max-width: 72ch; color: var(--read-muted); }
+  .key { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 40px; font-size: 14px; color: var(--read-muted); }
+  .key i { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
+  .xlist { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 14px; }
+  .xi { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; padding: 16px; background: var(--read-card); border-radius: 0 var(--r-m) var(--r-m) 0;
+        border-left: 8px solid var(--asphalt-3); cursor: pointer; }
+  .xi.v-hidden { border-left-color: var(--curb); } .xi.v-zone { border-left-color: var(--line); } .xi.v-clear { border-left-color: var(--lane); }
+  .xi .ch p, .xi .ap-h span:last-child, .xi .why { color: var(--read-muted); }
+  .xi .meter { background: rgba(127, 127, 127, .2); }
+  .xi img { width: 100%; border-radius: var(--r-s); display: block; }
+  .foot { font-size: 13px; margin-top: 36px; }
+
+  @media (max-width: 900px) {
+    .cockpit { height: auto; min-height: 0; overflow: visible; display: flex; flex-direction: column; }
+    .scrim, .mini { display: none; }
+    .head { position: static; order: 1; max-width: none; padding: 18px 16px 6px; }
+    #stage { position: relative; order: 2; height: 56svh; }
+    .bar { position: sticky; bottom: 0; order: 3; flex-wrap: wrap; padding: 10px 16px; z-index: 2; }
+    #scrub { order: 3; flex-basis: 100%; }
+    .card { position: static; order: 4; width: auto; margin: 14px 16px 0; }
+    .pip { position: relative; right: auto; top: auto; order: 5; width: auto; margin: 14px 16px 18px; }
+    .speed { top: auto; bottom: 12px; }
+    .xi { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .card.fresh { animation: none; } .speed { transition: none; } }
+</style>
+</head>
+<body>
+<main class="cockpit" aria-label="The ride, rebuilt in 3D">
+  <div id="stage" aria-label="The street rebuilt in 3D from the video"></div>
+  <div class="scrim"></div>
+  <div class="speed" id="speed" aria-hidden="true">Slowed down at the crossing</div>
+  <header class="head">
+    <a class="back" href="runs.html">All rides</a>
+    <h1 id="headline">Checking the crosswalks on this ride…</h1>
+    <p class="sub" id="sub"></p>
+    <button class="go" id="go">Play the ride</button>
+  </header>
+  <figure class="pip">
+    <div class="frame"><video id="vid" playsinline muted preload="auto"></video><canvas id="ov"></canvas></div>
+    <figcaption>What the camera saw</figcaption>
+  </figure>
+  <section class="card" id="card" aria-live="polite"></section>
+  <canvas class="mini" id="mini" aria-label="The street from above"></canvas>
+  <div class="bar">
+    <button id="play">Play</button>
+    <canvas id="scrub" tabindex="0" aria-label="Ride timeline: click or drag to move through the ride"></canvas>
+    <span class="clock" id="clock">0.0 s</span>
+    <div class="views" role="group" aria-label="Camera">
+      <button data-view="director" aria-pressed="true">Story</button>
+      <button data-view="chase" aria-pressed="false">Behind the rider</button>
+      <button data-view="overview" aria-pressed="false">Whole street</button>
+      <button data-view="free" aria-pressed="false">Look around</button>
+      <button id="cloud" aria-pressed="true">3D points</button>
+    </div>
+  </div>
+</main>
+<section class="read">
+  <div class="read-wrap">
+    <h2>How the check works</h2>
+    <p id="lede"></p>
+    <div class="key">
+      <span><i style="background:var(--curb)"></i>person at the curb hidden from oncoming traffic</span>
+      <span><i style="background:var(--line)"></i>seen in time, but something stands in the 20 ft</span>
+      <span><i style="background:var(--lane)"></i>daylit: clear</span>
+      <span><i style="background:rgba(224,54,44,.7)"></i>standing car</span>
+      <span><i style="background:#c9cdcf"></i>moving car</span>
+      <span><i style="background:rgba(245,197,24,.7)"></i>hedge, planter or shelter</span>
+    </div>
+    <h2>Every crossing on this ride</h2>
+    <ol class="xlist" id="xlist"></ol>
+    <p class="foot" id="foot"></p>
+  </div>
+</section>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- data: ?run=<id> (runs/<id>/app/, same layout on the Mac and the VM's mirror), ?data=<folder>, else the newest run
+const qs = new URLSearchParams(location.search);
+let runId = qs.get('run');
+if (!runId && !qs.get('data')) {
+  const runs = await (await fetch('../runs/index.json', { cache: 'no-store' })).json();
+  runId = (runs.filter(r => r.status === 'done').sort((a, b) => b.created.localeCompare(a.created))[0] || {}).id;
+}
+const base = (qs.get('data') || `../runs/${runId}/app/`).replace(/\/?$/, '/');
+const D = await (await fetch(base + 'ride.json', { cache: 'no-store' })).json();
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const vid = $('vid'), ov = $('ov'), mini = $('mini'), scrub = $('scrub');
+vid.src = base + D.video;
+const ortho = new Image(); ortho.src = base + D.ortho;
+await new Promise(r => ortho.onload = r);
+
+const byId = Object.fromEntries(D.objects.map(o => [o.id, o]));
+const cws = D.objects.filter(o => o.group === 'crosswalk' && o.approaches).sort((a, b) => a.t_pass - b.t_pass);
+cws.forEach((c, i) => c.n = i + 1);
+const S = D.stats, E = D.extent, CAM_H = D.cam_h || 1.1;
+const verdict = c => c.hidden ? 'v-hidden' : c.zone_blocked ? 'v-zone' : 'v-clear';
+const vcol = c => c.hidden ? css('--curb') : c.zone_blocked ? css('--line') : css('--lane');
+const names = ids => [...new Set(ids.map(i => byId[i].label))];
+const list = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const things = ids => {                     // "a standing car", "3 standing vehicles", "a hedge and 2 standing vehicles"
+  const os = [...new Set(ids)].map(i => byId[i]), v = os.filter(o => o.group === 'vehicle'), f = names(os.filter(o => o.group !== 'vehicle').map(o => o.id));
+  const vs = v.length === 1 ? `a ${v[0].label}` : v.length ? `${v.length} standing vehicles` : '';
+  return list([...f.map(n => `a ${n}`), ...(vs ? [vs] : [])]);
+};
+const LEAD = 3.4, GROW = 1.1, TAIL = 1.4;           // s of ride: inspection starts LEAD before passing, rays grow over GROW
+
+// ---- words ----
+$('headline').innerHTML = `<span class="count">${S.hidden ?? 0} of ${S.crosswalks}</span> crosswalks on this ride hide people waiting to cross from oncoming traffic.`;
+$('sub').textContent = S.zone_blocked == null ? '' :
+  `${S.zone_blocked} of ${S.crosswalks} have a car or street furniture standing in the 20 feet before the crossing, where daylighting keeps the curb clear.`;
+$('lede').textContent = `We rode ${Math.round(S.distance)} m of the bike path in ${Math.round(S.duration)} seconds. From the video alone we rebuilt the street in 3D ` +
+  `and found each crosswalk, the cars that stood still while we passed, and the hedges, planters and shelters along the curb. ` +
+  `Daylighting keeps the 20 feet before a crosswalk, on the side traffic comes from, clear, so a person at the curb and an oncoming driver or rider can see each other. ` +
+  `For every crossing we trace the sightlines from the curb up each oncoming lane, find what blocks them, and compare how far away the person first becomes visible with the distance needed to stop.`;
+$('foot').textContent = `Distances are in metres from an assumed ${CAM_H} m camera height; video alone has no scale. Crosswalks, cars and street furniture come from an open-vocabulary detector, ` +
+  `placed where the camera ray through their base meets the rebuilt road; a furniture item's height comes from the top of its box. Anything taller than ${D.rules?.occlude_h ?? .9} m blocks a sightline. ` +
+  `Stopping distance uses the rider's own speed at each crossing, ${D.rules?.react_s ?? 1.5} s to react and ${D.rules?.decel ?? 3} m/s² of braking. ` +
+  `A car counts as standing when it did not move while we rode past it; one ride cannot tell a parked car from one waiting at a light, more rides past the same corner can.`;
+
+function title(c) {
+  const A = c.approaches.filter(a => a.covered), w = (A.length ? A : c.approaches)
+    .reduce((w, a) => (a.seen_from_m - a.needed_m < w.seen_from_m - w.needed_m ? a : w));
+  return { w, text: c.hidden ? `Hidden until ${Math.round(w.seen_from_m)} m; stopping takes ${Math.round(w.needed_m)} m`
+                  : c.zone_blocked ? `Seen in time, but ${things(c.approaches.flatMap(a => a.in_zone))} in the 20 ft`
+                  : `Seen from ${Math.round(w.seen_from_m)} m; stopping takes ${Math.round(w.needed_m)} m` };
+}
+function meter(a) {                        // 0 m (the crossing) on the left, up the oncoming lane to the right
+  const max = Math.max(a.reach_m, a.needed_m, 1), pct = m => `${Math.min(100, Math.max(0, m) / max * 100).toFixed(1)}%`;
+  const by = things(a.blockers.map(b => b.id)), zone = things(a.in_zone);
+  const note = !a.covered ? `the ride ${a.direction === 'with the ride' ? 'starts' : 'ends'} here: lane not seen`
+             : a.hidden ? `curb seen at ${Math.round(a.seen_from_m)} m, needs ${Math.round(a.needed_m)} m`
+             : `curb seen from ${Math.round(a.seen_from_m)} m, needs ${Math.round(a.needed_m)} m`;
+  const bar = !a.covered ? `<div class="meter off"></div>` :
+    `<div class="meter" role="img" aria-label="${note}"><i class="seen" style="width:${pct(a.seen_from_m)}"></i>` +
+    (a.hidden ? `<i class="gap" style="left:${pct(a.seen_from_m)};width:calc(${pct(a.needed_m)} - ${pct(a.seen_from_m)})"></i>` : '') +
+    `<b class="stop" style="left:${pct(a.needed_m)}"></b></div>`;
+  const why = [by && a.covered ? `blocked by ${by}` : '', zone ? `${zone} in the 20 ft` : ''].filter(Boolean).join('; ');
+  return `<div><div class="ap-h"><span>Coming ${a.direction}</span><span>${note}</span></div>${bar}` +
+         (why ? `<p class="why">${cap(why)}.</p>` : '') + `</div>`;
+}
+function cardHTML(c) {
+  const t = title(c);
+  return `<div class="ch"><span class="disc">${c.n}</span><div><h2>${t.text}</h2>` +
+         `<p>Crossing ${c.n} at ${c.t_pass.toFixed(1)} s, riding at ${Math.round(t.w.speed_kmh)} km/h</p></div></div>` +
+         `<div class="aps">${c.approaches.map(meter).join('')}</div>`;
+}
+$('xlist').innerHTML = cws.map(c => `<li class="xi ${verdict(c)}" tabindex="0" data-id="${c.id}"><div>${cardHTML(c)}</div>` +
+  (c.evidence ? `<img src="${base + c.evidence}" alt="Crossing ${c.n} as the camera saw it at ${c.evidence_t.toFixed(1)} s" loading="lazy">` : '<span></span>') + `</li>`).join('');
+document.querySelectorAll('.xi').forEach(el => {
+  const go = () => { const c = byId[+el.dataset.id]; scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' }); seek(Math.max(0, c.t_pass - LEAD - .3)); start(); };
+  el.onclick = go; el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+});
+
+// ---- the ride: pose at time t, distance along it ----
+const PATH = D.path, arc = [0];
+for (let i = 1; i < PATH.length; i++) arc.push(arc[i - 1] + Math.hypot(PATH[i].x - PATH[i - 1].x, PATH[i].y - PATH[i - 1].y));
+function rider(t) {
+  let i = Math.min(PATH.length - 2, Math.max(0, Math.floor(t * D.fps)));
+  while (i > 0 && PATH[i].t > t) i--;
+  while (i < PATH.length - 2 && PATH[i + 1].t < t) i++;
+  const a = PATH[i], b = PATH[i + 1], u = Math.min(1, Math.max(0, (t - a.t) / Math.max(b.t - a.t, 1e-6)));
+  let dh = b.h - a.h; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+  return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, h: (a.h + dh * u) * Math.PI / 180, s: arc[i] + (arc[i + 1] - arc[i]) * u };
+}
+cws.forEach(c => { let best = 0, bd = 1e9; PATH.forEach((p, i) => { const d = Math.hypot(p.x - c.xy[0], p.y - c.xy[1]); if (d < bd) { bd = d; best = i; } }); c.s = arc[best]; });
+const inWindow = (c, t) => t >= c.t_pass - LEAD && t <= c.t_pass + TAIL;
+const inspecting = t => cws.find(c => inWindow(c, t)) || null;
+const growth = (c, t) => Math.min(1, Math.max(0, (t - (c.t_pass - LEAD)) / GROW));
+const ease = x => 1 - Math.pow(1 - x, 3);
+
+// ---- the street in 3D (plan metres, z up) ----
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setClearColor(0x000000, 0);
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog('#262d3a', 45, 150);
+const cam = new THREE.PerspectiveCamera(48, 2, .1, 600); cam.up.set(0, 0, 1);
+const orbit = new OrbitControls(cam, renderer.domElement); orbit.enabled = false; orbit.enableDamping = true; orbit.maxPolarAngle = Math.PI * .48;
+scene.add(new THREE.HemisphereLight('#a9bddb', '#2b2724', 1.9));
+const sun = new THREE.DirectionalLight('#ffd3a3', 1.0); sun.position.set(-30, 25, 50); scene.add(sun);
+const C3 = { red: new THREE.Color(css('--curb')), green: new THREE.Color(css('--lane')), yellow: new THREE.Color(css('--line')), paint: new THREE.Color(css('--paint')) };
+const cx0 = (E.x0 + E.x1) / 2, cy0 = (E.y0 + E.y1) / 2;
+{ // the ground beyond what we saw, with a survey grid, then the road from above
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshLambertMaterial({ color: '#1a1d20' }));
+  g.position.set(cx0, cy0, -.08); scene.add(g);
+  const grid = new THREE.GridHelper(600, 120, '#3a4250', '#2a313b'); grid.rotation.x = Math.PI / 2; grid.position.set(cx0, cy0, -.07);
+  grid.material.transparent = true; grid.material.opacity = .55; scene.add(grid);
+  const cv = document.createElement('canvas'); cv.width = ortho.width; cv.height = ortho.height;
+  const x = cv.getContext('2d'); x.drawImage(ortho, 0, 0);
+  const im = x.getImageData(0, 0, cv.width, cv.height), a = im.data;
+  for (let i = 0; i < a.length; i += 4) if (a[i] + a[i + 1] + a[i + 2] < 12) a[i + 3] = 0;    // never seen: see-through
+  x.putImageData(im, 0, 0);
+  // keep the street we rode: the photo fades out ~12 m either side of the ride, where it is seen too obliquely to trust
+  const mk = document.createElement('canvas'); mk.width = cv.width; mk.height = cv.height; const m = mk.getContext('2d');
+  m.filter = `blur(${Math.round(4 / E.res)}px)`; m.strokeStyle = '#fff'; m.lineCap = m.lineJoin = 'round'; m.lineWidth = 20 / E.res;
+  m.beginPath(); D.path.forEach((p, i) => { const px = (p.x - E.x0) / E.res, py = (E.y1 - p.y) / E.res; i ? m.lineTo(px, py) : m.moveTo(px, py); }); m.stroke();
+  x.globalCompositeOperation = 'destination-in'; x.drawImage(mk, 0, 0); x.globalCompositeOperation = 'source-over';
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(E.x1 - E.x0, E.y1 - E.y0), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  road.position.set(cx0, cy0, -.03); scene.add(road);
+}
+const cloudPts = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: .07, vertexColors: true }));
+if (D.cloud) {
+  const [pb, cb] = await Promise.all([D.cloud.points, D.cloud.colours].map(f => fetch(base + f).then(r => r.arrayBuffer())));
+  const pa = new Float32Array(pb), ca = new Uint8Array(cb), keep = [];
+  for (let i = 0; i < pa.length / 3; i++) if (pa[3 * i + 2] > .25) keep.push(i);         // the road is the photo; points add what stands on it
+  const P3 = new Float32Array(keep.length * 3), Cb = new Uint8Array(keep.length * 3);
+  keep.forEach((i, j) => { for (let k = 0; k < 3; k++) { P3[3 * j + k] = pa[3 * i + k]; Cb[3 * j + k] = ca[3 * i + k]; } });
+  cloudPts.geometry.setAttribute('position', new THREE.BufferAttribute(P3, 3));
+  cloudPts.geometry.setAttribute('color', new THREE.BufferAttribute(Cb, 3, true));
+  scene.add(cloudPts);
+}
+// the ride as a painted ribbon: dim ahead, green where we have been
+const ribbon = (() => {
+  const pos = [], idx = [], w = .22;
+  PATH.forEach((p, i) => {
+    const q = PATH[Math.min(i + 1, PATH.length - 1)], r = PATH[Math.max(i - 1, 0)];
+    let dx = q.x - r.x, dy = q.y - r.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    pos.push(p.x - dy * w, p.y + dx * w, .05, p.x + dy * w, p.y - dx * w, .05);
+    if (i) { const a = 2 * (i - 1); idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
+  const all = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: C3.green, transparent: true, opacity: .28, depthWrite: false }));
+  const done = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({ color: C3.green, transparent: true, opacity: .95, depthWrite: false }));
+  scene.add(all, done); return done;
+})();
+
+const flat = (pts, z) => { const sh = new THREE.Shape(); pts.forEach((p, i) => i ? sh.lineTo(p[0], p[1]) : sh.moveTo(p[0], p[1])); const g = new THREE.ShapeGeometry(sh); g.translate(0, 0, z); return g; };
+function textSprite(text, fg, bg, h = .9) {
+  const cv = document.createElement('canvas'), x = cv.getContext('2d'), f = '700 44px Overpass, sans-serif';
+  x.font = f; const w = Math.ceil(x.measureText(text).width) + 36; cv.width = w; cv.height = 72;
+  x.font = f; x.fillStyle = bg; x.beginPath(); x.roundRect(0, 6, w, 60, 30); x.fill();
+  x.fillStyle = fg; x.textBaseline = 'middle'; x.fillText(text, 18, 40);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(h * w / 72, h, 1); sp.renderOrder = 10; return sp;
+}
+// road text, painted the way "PEDS TO YIELD" is: tall letters, first word nearest the traffic reading it
+function roadText(lines, color) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256 * lines.length;
+  const x = cv.getContext('2d'); x.fillStyle = color; x.font = '800 190px Overpass, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  [...lines].reverse().forEach((l, i) => { x.save(); x.translate(256, 128 + 256 * i + 14); x.scale(.58, 1); x.fillText(l, 0, 0); x.restore(); });
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9 * lines.length * 1.25), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  m.renderOrder = 3; return m;
+}
+
+// vehicles and street furniture
+const unitBox = new THREE.BoxGeometry(1, 1, 1); unitBox.translate(0, 0, .5);
+const meshOf = {};
+function block(o, color, opacity, h) {
+  const F = o.footprint, L = Math.hypot(F[1][0] - F[0][0], F[1][1] - F[0][1]), W = Math.hypot(F[2][0] - F[1][0], F[2][1] - F[1][1]);
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(unitBox, new THREE.MeshLambertMaterial({ color, transparent: true, opacity, depthWrite: opacity > .9, emissive: '#000000' }));
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(unitBox), new THREE.LineBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), .45), transparent: true, opacity: Math.min(1, opacity + .25) }));
+  for (const k of [m, e]) { k.scale.set(L, W, h); g.add(k); }
+  g.position.set((F[0][0] + F[2][0]) / 2, (F[0][1] + F[2][1]) / 2, 0); g.rotation.z = Math.atan2(F[1][1] - F[0][1], F[1][0] - F[0][0]);
+  scene.add(g); meshOf[o.id] = m; return g;
+}
+for (const o of D.objects) {
+  if (o.group === 'vehicle') block(o, o.parked ? C3.red : new THREE.Color('#8a8f92'), o.parked ? .62 : .16, o.height || 1.45);
+  else if (o.footprint) block(o, C3.yellow, o.occluder ? .5 : .14, Math.max(.3, Math.min(o.height || 1, 3.5)));
+  else if (o.group !== 'crosswalk') {
+    const spec = { bollard: [new THREE.CylinderGeometry(.1, .1, .9, 12), C3.yellow, .45], person: [new THREE.CapsuleGeometry(.23, 1.1, 4, 10), C3.paint, .8],
+                   bicycle: [new THREE.BoxGeometry(.45, .45, 1), new THREE.Color('#6fc3ff'), .5], 'fire hydrant': [new THREE.CylinderGeometry(.16, .2, .7, 12), C3.red, .35],
+                   pole: [new THREE.CylinderGeometry(.07, .07, 4, 8), new THREE.Color('#6c7176'), 2], tree: [new THREE.CylinderGeometry(.14, .18, 3, 8), new THREE.Color('#5b5148'), 1.5] }[o.group];
+    if (!spec) continue;
+    const m = new THREE.Mesh(spec[0], new THREE.MeshLambertMaterial({ color: spec[1] }));
+    if (o.group !== 'bicycle') m.rotation.x = Math.PI / 2;
+    m.position.set(o.xy[0], o.xy[1], spec[2]); scene.add(m);
+  }
+}
+
+// crossings: zebra bars, the 20 ft zones, the person at each curb, sightlines, painted verdicts, labels
+for (const c of cws) {
+  const r = rider(c.t_pass), v = [Math.cos(r.h), Math.sin(r.h)], u = [-v[1], v[0]];
+  const R = c.rect, ctr = [R.reduce((s, p) => s + p[0], 0) / 4, R.reduce((s, p) => s + p[1], 0) / 4];
+  const hu = Math.max(...R.map(p => Math.abs((p[0] - ctr[0]) * u[0] + (p[1] - ctr[1]) * u[1])));
+  const hv = Math.max(...R.map(p => Math.abs((p[0] - ctr[0]) * v[0] + (p[1] - ctr[1]) * v[1])));
+  for (let k = -hu + .4; k <= hu - .3; k += 1.0) {
+    const bar = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.6, 2 * hv - .6), .5), new THREE.MeshBasicMaterial({ color: C3.paint, transparent: true, opacity: .82, depthWrite: false }));
+    bar.position.set(ctr[0] + u[0] * k, ctr[1] + u[1] * k, .04); bar.rotation.z = Math.atan2(v[1], v[0]); scene.add(bar);
+  }
+  const disc = textSprite(String(c.n), c.zone_blocked && !c.hidden ? '#1e2022' : '#ffffff', vcol(c), 1.5); disc.position.set(c.xy[0], c.xy[1], 7.5); scene.add(disc);
+  c.fx = { aps: [], labels: [] };
+  for (const a of c.approaches) {
+    scene.add(new THREE.Mesh(flat(a.zone, .02), new THREE.MeshBasicMaterial({ color: a.in_zone.length ? C3.red : C3.green, transparent: true, opacity: .32, depthWrite: false })));
+    const ped = new THREE.Mesh(new THREE.CapsuleGeometry(.24, 1.1, 4, 10), new THREE.MeshLambertMaterial({ color: C3.paint, emissive: '#333333' }));
+    ped.rotation.x = Math.PI / 2; ped.position.set(a.waiting[0], a.waiting[1], .8); scene.add(ped);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(.45, .6, 40), new THREE.MeshBasicMaterial({ color: a.hidden ? C3.red : a.covered ? C3.green : C3.paint, transparent: true, depthWrite: false }));
+    ring.position.set(a.waiting[0], a.waiting[1], .06); scene.add(ring);
+    // sightlines: two vertices a ray, grown from the curb outward during the inspection
+    const n = a.rays.length, pos = new Float32Array(n * 6), col = new Float32Array(n * 6);
+    a.rays.forEach((ray, i) => { const k = ray.clear ? C3.paint : C3.red; col.set([k.r, k.g, k.b, k.r, k.g, k.b], 6 * i); });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const rays = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .85, depthWrite: false }));
+    rays.renderOrder = 4; rays.frustumCulled = false; scene.add(rays);
+    // the verdict painted on the lane, facing the traffic that reads it
+    const paints = [];
+    const at = d => a.rays.reduce((b, q) => Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b, a.rays[0]);
+    const put = (m, d) => {
+      const q = at(d), dir = [a.edge[0] - q.to[0], a.edge[1] - q.to[1]], l = Math.hypot(...dir) || 1;
+      m.position.set(q.to[0], q.to[1], .07); m.rotation.z = Math.atan2(dir[1] / l, dir[0] / l) - Math.PI / 2; scene.add(m); paints.push(m);
+    };
+    if (a.rays.length && a.covered) put(roadText(['STOP', `${Math.round(a.needed_m)} M`], '#f2f1ec'), a.needed_m);
+    if (a.rays.length && a.hidden) put(roadText(['SEEN', `AT ${Math.round(a.seen_from_m)} M`], css('--curb')), Math.max(a.seen_from_m, 1.6));
+    c.fx.aps.push({ a, rays, ring, paints });
+  }
+  for (const id of new Set(c.approaches.flatMap(a => [...a.in_zone, ...a.blockers.map(b => b.id)]))) {
+    const o = byId[id]; if (!o.footprint) continue;
+    const txt = o.group === 'vehicle' ? cap(o.label) : `${cap(o.label)}, ${o.height.toFixed(1)} m tall`;
+    const sp = textSprite(txt, o.group === 'vehicle' ? '#ffffff' : '#1e2022', o.group === 'vehicle' ? css('--curb') : css('--line'), .7);
+    sp.position.set(o.xy[0], o.xy[1], (o.height || 1.45) + .9 + .85 * c.fx.labels.length); scene.add(sp); c.fx.labels.push({ sp, id });
+  }
+}
+// the rider
+const riderM = new THREE.Group();
+{ const body = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.3, 4), new THREE.MeshLambertMaterial({ color: C3.yellow, emissive: '#5a4600' }));
+  body.rotation.z = -Math.PI / 2; body.position.z = CAM_H; riderM.add(body);
+  const half = D.hfov / 2 * Math.PI / 180, sh = new THREE.Shape(); sh.moveTo(0, 0); sh.absarc(0, 0, 14, -half, half, false); sh.lineTo(0, 0);
+  const cone = new THREE.Mesh(new THREE.ShapeGeometry(sh, 24), new THREE.MeshBasicMaterial({ color: C3.yellow, transparent: true, opacity: .12, depthWrite: false }));
+  cone.position.z = .05; riderM.add(cone); }
+scene.add(riderM);
+
+// ---- the director: where the camera goes ----
+let view = 'director', started = false;
+const eye = new THREE.Vector3(), look = new THREE.Vector3(), wantEye = new THREE.Vector3(), wantLook = new THREE.Vector3();
+let last = performance.now();
+function shot(t, now) {
+  const R = rider(t), fx = Math.cos(R.h), fy = Math.sin(R.h);
+  const behind = () => { wantEye.set(R.x - 9 * fx, R.y - 9 * fy, 6); wantLook.set(R.x + 10 * fx, R.y + 10 * fy, 0); };
+  if (view === 'chase') return behind();
+  if (view === 'overview') { wantEye.set(cx0 - 22, cy0 - 50, 46); wantLook.set(cx0 + 4, cy0, 0); return; }
+  if (!started) {                                      // the opening: a slow flight down the street we rode
+    const total = arc[arc.length - 1], s = still ? total * .35 : (now * .005) % total;
+    const i = Math.max(0, arc.findIndex(v => v >= s)), p = PATH[i], q = PATH[Math.min(i + 6, PATH.length - 1)];
+    let dx = q.x - p.x, dy = q.y - p.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    wantEye.set(p.x - dx * 14 - dy * 16, p.y - dy * 14 + dx * 16, 17); wantLook.set(p.x + dx * 16, p.y + dy * 16, 0); return;
+  }
+  const c = inspecting(t);
+  if (!c) return behind();
+  // above and behind the traffic coming toward the crossing, looking down its lane: the approaching rider's view, raised
+  const a = c.approaches.find(a => a.hidden) || c.approaches.find(a => a.covered) || c.approaches[0];
+  const far = a.lane.length ? a.lane[Math.min(a.lane.length - 1, 11)] : [c.xy[0] - 10 * fx, c.xy[1] - 10 * fy];
+  let dx = a.edge[0] - far[0], dy = a.edge[1] - far[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+  const k = still ? 0 : (t - (c.t_pass - LEAD)) * .08 - .25;        // drift slowly round while it is inspected
+  const sx = Math.cos(k) * -dy - Math.sin(k) * dx, sy = Math.cos(k) * dx - Math.sin(k) * dy;
+  const mid = [(a.waiting[0] + a.edge[0]) / 2 - dx * Math.min(a.needed_m, 10) * .35, (a.waiting[1] + a.edge[1]) / 2 - dy * Math.min(a.needed_m, 10) * .35];
+  const aside = innerWidth > 900 ? 3.5 : 0;                         // the words sit on the left: keep the crossing right of them
+  wantLook.set(mid[0] - dy * aside, mid[1] + dx * aside, 0);
+  wantEye.set(mid[0] - dx * 17 + sx * 7 - dy * aside, mid[1] - dy * 17 + sy * 7 + dx * aside, 20);
+}
+
+// ---- per frame: the scene's moving parts ----
+function update3d(t, now) {
+  const R = rider(t);
+  riderM.position.set(R.x, R.y, 0); riderM.rotation.z = R.h;
+  let k = 0; while (k < PATH.length - 1 && PATH[k + 1].t <= t) k++;
+  ribbon.geometry.setDrawRange(0, 6 * k);
+  const pulse = still ? .5 : .5 + .5 * Math.sin(now * .006);
+  const lit = new Set();
+  for (const c of cws) {
+    const on = view === 'overview' || view === 'free' ? 1 : inWindow(c, t) ? ease(growth(c, t)) : 0;
+    for (const f of c.fx.aps) {
+      const p = f.rays.geometry.attributes.position, w = f.a.waiting;
+      f.a.rays.forEach((ray, i) => {
+        p.setXYZ(2 * i, w[0], w[1], 1.0);
+        p.setXYZ(2 * i + 1, w[0] + (ray.to[0] - w[0]) * on, w[1] + (ray.to[1] - w[1]) * on, 1.0 + .1 * on);
+      });
+      p.needsUpdate = true; f.rays.visible = on > 0;
+      f.paints.forEach(m => m.visible = on >= .999);
+      const s = still ? 1.4 : 1 + 1.6 * ((now * .0011) % 1);
+      f.ring.visible = on > 0; f.ring.scale.set(s, s, 1); f.ring.material.opacity = still ? .8 : 1.1 - (s - 1) / 1.6;
+    }
+    for (const L of c.fx.labels) { L.sp.visible = view !== 'overview' && on >= .999; if (on > 0) lit.add(L.id); }
+  }
+  for (const [id, m] of Object.entries(meshOf)) { const q = lit.has(+id) ? pulse : 0; m.material.emissive.setRGB(.55 * q, .45 * q, .1 * q); }
+  if (view === 'free') orbit.update();
+  else {
+    shot(t, now);
+    const dt = Math.min(.1, (now - last) / 1000), a = still ? 1 : 1 - Math.exp(-dt * 2.2);
+    if (!eye.lengthSq()) { eye.copy(wantEye); look.copy(wantLook); }
+    eye.lerp(wantEye, a); look.lerp(wantLook, a); cam.position.copy(eye); cam.lookAt(look);
+  }
+  renderer.render(scene, cam);
+}
+function size3() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+new ResizeObserver(size3).observe(stage); size3();
+
+// ---- the card: the crossing being inspected, else the next one ----
+let shown = null;
+function updateCard(t) {
+  const c = cws.find(c => t >= c.t_pass - LEAD - .4 && t <= c.t_pass + TAIL + 1.2) || null;
+  const nx = cws.find(c => c.t_pass > t);
+  const key = c ? `c${c.id}` : `n${nx ? nx.id : 'end'}`;
+  if (key === shown) {
+    const el = $('card').querySelector('.next');
+    if (!c && nx && el) el.textContent = `Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s - rider(t).s))} m`;
+    return;
+  }
+  shown = key;
+  const card = $('card');
+  card.className = 'card ' + (c ? verdict(c) : '');
+  card.innerHTML = c ? cardHTML(c)
+    : nx ? `<p class="next">Crossing ${nx.n} in ${Math.max(0, Math.round(nx.s - rider(t).s))} m</p><p class="hint">Space plays or pauses. The arrow keys jump between crossings.</p>`
+         : `<p class="next">End of the ride</p><p class="hint">${S.crosswalks} crossings checked over ${Math.round(S.distance)} m.</p>`;
+  void card.offsetWidth; card.classList.add('fresh');
+}
+
+// ---- the minimap ----
+const MS = { s: 0, x: 0, y: 0 };
+function drawMini(t) {
+  if (!mini.offsetParent) return;
+  const r = devicePixelRatio || 1, W = Math.round(mini.clientWidth * r), H = Math.round(mini.clientHeight * r);
+  if (mini.width !== W || mini.height !== H) { mini.width = W; mini.height = H; }
+  const ctx = mini.getContext('2d'), R = rider(t);
+  const fit = Math.min(W / (E.x1 - E.x0), H / (E.y1 - E.y0)) * 2.6;
+  const a = still || !MS.s ? 1 : .15, ax = R.x + Math.cos(R.h) * 10, ay = R.y + Math.sin(R.h) * 10;   // what is coming up
+  MS.s += (fit - MS.s) * a; MS.x += (ax - MS.x) * a; MS.y += (ay - MS.y) * a;
+  const P = (x, y) => [W / 2 + (x - MS.x) * MS.s, H / 2 - (y - MS.y) * MS.s];
+  const poly = pts => { ctx.beginPath(); pts.forEach((p, i) => { const [x, y] = P(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); };
+  ctx.clearRect(0, 0, W, H);
+  const [ix, iy] = P(E.x0, E.y1); ctx.globalAlpha = .9; ctx.drawImage(ortho, ix, iy, (E.x1 - E.x0) * MS.s, (E.y1 - E.y0) * MS.s); ctx.globalAlpha = 1;
+  for (const c of cws) for (const a of c.approaches) { poly(a.zone); ctx.fillStyle = a.in_zone.length ? 'rgba(224,54,44,.45)' : 'rgba(47,163,107,.35)'; ctx.fill(); }
+  for (const o of D.objects) if (o.footprint) {
+    poly(o.footprint);
+    ctx.fillStyle = o.group === 'vehicle' ? (o.parked ? 'rgba(224,54,44,.75)' : 'rgba(201,205,207,.25)') : (o.occluder ? 'rgba(245,197,24,.75)' : 'rgba(245,197,24,.25)'); ctx.fill();
+  }
+  ctx.strokeStyle = css('--lane'); ctx.lineWidth = 3 * r; ctx.lineCap = 'round'; ctx.beginPath();
+  PATH.filter(p => p.t <= t).forEach((p, i) => { const [x, y] = P(p.x, p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  for (const c of cws) {
+    const [x, y] = P(...c.xy); ctx.fillStyle = vcol(c); ctx.beginPath(); ctx.arc(x, y, 9 * r, 0, 7); ctx.fill();
+    ctx.fillStyle = c.zone_blocked && !c.hidden ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, y + r);
+  }
+  const [rx, ry] = P(R.x, R.y), half = D.hfov / 2 * Math.PI / 180;
+  const g = ctx.createRadialGradient(rx, ry, 0, rx, ry, 16 * MS.s); g.addColorStop(0, 'rgba(245,197,24,.4)'); g.addColorStop(1, 'rgba(245,197,24,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.arc(rx, ry, 16 * MS.s, -R.h - half, -R.h + half); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = css('--line'); ctx.strokeStyle = '#1e2022'; ctx.lineWidth = 2 * r; ctx.beginPath(); ctx.arc(rx, ry, 6 * r, 0, 7); ctx.fill(); ctx.stroke();
+}
+
+// ---- the scrubber ----
+function drawScrub(t) {
+  const r = devicePixelRatio || 1, W = Math.round(scrub.clientWidth * r), H = Math.round(scrub.clientHeight * r), dur = S.duration;
+  if (scrub.width !== W || scrub.height !== H) { scrub.width = W; scrub.height = H; }
+  const ctx = scrub.getContext('2d'), X = s => 12 * r + (W - 24 * r) * Math.min(1, Math.max(0, s / dur));
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(242,241,236,.16)'; ctx.fillRect(X(0), H / 2 - 3 * r, X(dur) - X(0), 6 * r);
+  for (const c of cws) { ctx.fillStyle = 'rgba(245,197,24,.16)'; ctx.fillRect(X(c.t_pass - LEAD), H / 2 - 9 * r, X(c.t_pass + TAIL) - X(c.t_pass - LEAD), 18 * r); }
+  ctx.fillStyle = css('--lane'); ctx.fillRect(X(0), H / 2 - 3 * r, X(t) - X(0), 6 * r);
+  for (const c of cws) {
+    const x = X(c.t_pass); ctx.fillStyle = vcol(c); ctx.beginPath(); ctx.arc(x, H / 2, 10 * r, 0, 7); ctx.fill();
+    ctx.fillStyle = c.zone_blocked && !c.hidden ? '#1e2022' : '#fff'; ctx.font = `800 ${11 * r}px Overpass`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.n, x, H / 2 + r);
+  }
+  ctx.fillStyle = css('--paint'); ctx.fillRect(X(t) - 1.5 * r, 4 * r, 3 * r, H - 8 * r);
+}
+let dragging = false;
+const scrubTo = e => { const b = scrub.getBoundingClientRect(); seek(Math.min(1, Math.max(0, (e.clientX - b.left - 12) / (b.width - 24))) * S.duration); begin(); };
+scrub.onpointerdown = e => { dragging = true; scrub.setPointerCapture(e.pointerId); scrubTo(e); };
+scrub.onpointermove = e => { if (dragging) scrubTo(e); };
+scrub.onpointerup = () => { dragging = false; };
+
+// ---- the video and its boxes ----
+function drawOverlay(t) {
+  const r = devicePixelRatio || 1, b = ov.getBoundingClientRect(), W = Math.round(b.width * r), H = Math.round(b.height * r);
+  if (ov.width !== W || ov.height !== H) { ov.width = W; ov.height = H; }
+  const ctx = ov.getContext('2d'); ctx.clearRect(0, 0, W, H);
+  const boxes = D.overlays[Math.round(t * D.fps)] || [], sx = W / D.frame_size[0], sy = H / D.frame_size[1];
+  const act = inspecting(t), key = new Set(act ? act.approaches.flatMap(a => [...a.in_zone, ...a.blockers.map(b => b.id)]) : []);
+  ctx.font = `700 ${11 * r}px Overpass`; ctx.textBaseline = 'bottom';
+  for (const [id, x0, y0, x1, y1] of boxes) {
+    const o = byId[id]; let col, label = '';
+    if (o.group === 'vehicle') { col = o.parked ? css('--curb') : '#c9cdcf'; label = key.has(id) ? 'standing' : ''; }
+    else if (o.group === 'crosswalk') { const c = cws.find(c => c.id === id); if (!c) continue; col = vcol(c); label = `crossing ${c.n}`; }
+    else if (o.footprint) { col = css('--line'); label = key.has(id) ? o.label : ''; }
+    else continue;
+    ctx.globalAlpha = !act || key.has(id) || o.group === 'crosswalk' ? 1 : .45;
+    ctx.strokeStyle = col; ctx.lineWidth = (o.group === 'crosswalk' ? 2.5 : 1.8) * r; ctx.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy);
+    if (label) { const w = ctx.measureText(label).width + 8 * r; ctx.fillStyle = col; ctx.fillRect(x0 * sx, y0 * sy - 14 * r, w, 14 * r);
+      ctx.fillStyle = col === css('--line') || col === '#c9cdcf' ? '#1e2022' : '#fff'; ctx.fillText(label, x0 * sx + 4 * r, y0 * sy - r); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- controls ----
+function seek(t) { vid.currentTime = Math.min(S.duration, Math.max(0, t)); }
+function begin() { started = true; $('go').hidden = true; document.querySelector('.cockpit').classList.add('playing'); }
+function start() { begin(); vid.play(); }
+$('go').onclick = start;
+$('play').onclick = () => { if (!started || vid.paused) start(); else vid.pause(); };
+vid.onplay = () => { begin(); $('play').textContent = 'Pause'; };
+vid.onpause = () => $('play').textContent = 'Play';
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+  view = b.dataset.view; orbit.enabled = view === 'free';
+  document.querySelectorAll('[data-view]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  if (view === 'free') { orbit.target.copy(look); orbit.update(); }
+});
+$('cloud').onclick = () => { cloudPts.visible = !cloudPts.visible; $('cloud').setAttribute('aria-pressed', cloudPts.visible); };
+addEventListener('keydown', e => {
+  if (e.target.closest('button, input, select, textarea, a, .xi')) return;
+  const t = vid.currentTime || 0;
+  if (e.key === ' ') { e.preventDefault(); $('play').click(); }
+  else if (e.key === 'ArrowRight') { const c = cws.find(c => c.t_pass - LEAD - .3 > t + .05); if (c) { seek(c.t_pass - LEAD - .3); begin(); } }
+  else if (e.key === 'ArrowLeft') { const c = [...cws].reverse().find(c => c.t_pass - LEAD - .3 < t - .6); seek(c ? c.t_pass - LEAD - .3 : 0); }
+});
+
+function frame(now) {
+  const t = vid.currentTime || 0;
+  // the story slows down while a crossing is inspected
+  const slow = view === 'director' && started && !vid.paused && !!inspecting(t) && !still;
+  const rate = slow ? .4 : 1; if (vid.playbackRate !== rate) vid.playbackRate = rate;
+  $('speed').classList.toggle('on', slow);
+  $('clock').textContent = `${t.toFixed(1)} s of ${S.duration.toFixed(1)} s`;
+  update3d(t, now); updateCard(t); drawMini(t); drawScrub(t); drawOverlay(t);
+  last = now;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

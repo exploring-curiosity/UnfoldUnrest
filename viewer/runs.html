@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ride Runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root { --asphalt: #2e3133; --asphalt-2: #373b3e; --asphalt-3: #44494c; --paint: #f2f1ec; --muted: #a6aaac;
+          --lane: #2fa36b; --curb: #e0362c; --line: #f5c518; --radius-s: 4px; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --asphalt: #e9e7e1; --asphalt-2: #f6f5f1; --asphalt-3: #d6d3cb; --paint: #1f2224; --muted: #5d6265; }
+  }
+  :root[data-theme="light"] { --asphalt: #e9e7e1; --asphalt-2: #f6f5f1; --asphalt-3: #d6d3cb; --paint: #1f2224; --muted: #5d6265; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--asphalt); color: var(--paint); font: 400 16px/1.5 "Overpass", system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-weight: 800; font-size: clamp(26px, 3.4vw, 40px); line-height: 1.1; margin: 0 0 8px; }
+  .lede { color: var(--muted); margin: 0 0 22px; max-width: 70ch; }
+  .run { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 14px 14px 12px; margin-bottom: 8px;
+         background: var(--asphalt-2); border-left: 6px solid var(--asphalt-3); border-radius: 0 var(--radius-s) var(--radius-s) 0;
+         color: inherit; text-decoration: none; }
+  a.run:hover, a.run:focus-visible { background: var(--asphalt-3); outline: none; }
+  a.run:focus-visible { outline: 3px solid var(--line); outline-offset: 2px; }
+  .run.done { border-left-color: var(--lane); }
+  .run.bad { border-left-color: var(--curb); }
+  .run.failed { border-left-color: var(--curb); opacity: .8; }
+  .name { font-weight: 800; font-size: 18px; }
+  .state { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .what { color: var(--muted); font-size: 14px; grid-column: 1 / -1; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Rides checked for daylighting</h1>
+  <p class="lede">Each ride is one clip, newest first. Open a ride to see its crosswalks, what blocks the view of oncoming traffic, and the street rebuilt in 3D.</p>
+  <div id="list"><p class="empty">Loading the rides…</p></div>
+</div>
+<script type="module">
+const runs = await (await fetch('../runs/index.json', { cache: 'no-store' })).json();
+runs.sort((a, b) => b.created.localeCompare(a.created));
+const when = s => new Date(s).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+document.getElementById('list').innerHTML = runs.length ? runs.map(r => {
+  const s = r.summary || {}, done = r.status === 'done';
+  const state = done ? when(r.created) : r.status === 'failed' ? 'Failed' : `${r.status[0].toUpperCase() + r.status.slice(1)}${r.stage ? ': ' + r.stage : ''}`;
+  const what = done ? `${s.crosswalks ?? '?'} crosswalks, ${s.hidden ?? s.blocked ?? '?'} hide a person waiting to cross from oncoming traffic, ${s.zone_blocked ?? '?'} with something standing in the 20 ft before them. ${Math.round(s.distance ?? 0)} m in ${Math.round(s.duration ?? 0)} s.`
+             : r.status === 'failed' ? esc(r.error || '') : 'Results appear here when the run finishes.';
+  const cls = `run ${r.status}${done && (s.failing ?? s.blocked) ? ' bad' : ''}`;
+  const body = `<span class="name">${esc(r.name)}</span><span class="state">${state}</span><span class="what">${what}</span>`;
+  return done ? `<a class="${cls}" href="ride.html?run=${encodeURIComponent(r.id)}">${body}</a>` : `<div class="${cls}">${body}</div>`;
+}).join('') : '<p class="empty">No rides yet. Send a clip from the VM with vm_client.py submit.</p>';
+</script>
+</body>
+</html>

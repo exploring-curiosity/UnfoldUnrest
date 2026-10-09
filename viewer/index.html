@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BuddyBuilder Guide</title>
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e3e0da;
+    --accent: #e8590c; --accent-ink: #ffffff; --chip: #f0ede7; --canvas: #ebe8e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141416; --panel: #1c1c1f; --ink: #f2f2f3; --muted: #9a9aa2; --line: #2c2c31;
+      --accent: #ff7a2e; --accent-ink: #141416; --chip: #26262b; --canvas: #18181b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141416; --panel: #1c1c1f; --ink: #f2f2f3; --muted: #9a9aa2; --line: #2c2c31;
+    --accent: #ff7a2e; --accent-ink: #141416; --chip: #26262b; --canvas: #18181b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 1fr 360px; height: calc(100% - 52px); }
+  #stage { position: relative; background: var(--canvas); min-height: 320px; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  .hud { position: absolute; left: 16px; bottom: 16px; right: 16px; display: flex; gap: 10px; align-items: center; }
+  .hud input[type=range] { flex: 1; accent-color: var(--accent); }
+  .tag { position: absolute; left: 16px; top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+         padding: 5px 12px; font-size: 13px; color: var(--muted); }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .step-now .n { font-size: 28px; font-weight: 700; }
+  .step-now .t { font-size: 17px; margin-top: 2px; }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .4; cursor: default; }
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  ol.steps li { padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; display: flex; gap: 10px; align-items: center; }
+  ol.steps li.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  ol.steps li .i { font-weight: 700; color: var(--muted); width: 18px; }
+  .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+  ul.parts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  ul.parts li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  ul.parts li .meta { margin-left: auto; color: var(--muted); font-size: 12px; }
+  video { width: 100%; border-radius: 10px; background: #000; max-height: 260px; }
+  .note { color: var(--muted); font-size: 12px; }
+  .seen { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: repeating-linear-gradient(45deg, #c9cfda 0 3px, #9aa3b2 3px 6px); vertical-align: middle; }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    #stage { height: 62vh; }
+    aside { border-left: 0; border-top: 1px solid var(--line); padding: 16px; }
+    header { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<header><h1>BuddyBuilder</h1><span class="sub" id="title">loading…</span></header>
+<main>
+  <div id="stage">
+    <div class="tag" id="tag">Step –</div>
+    <div class="hud">
+      <button id="play" class="primary" title="Play all steps">▶ Play</button>
+      <input id="explode" type="range" min="0" max="1" step="0.01" value="0" aria-label="Exploded view">
+      <span class="note">explode</span>
+    </div>
+  </div>
+  <aside>
+    <section class="card step-now">
+      <h2>Current step</h2>
+      <div class="n" id="stepn">–</div>
+      <div class="t" id="stept"></div>
+      <div class="row"><button id="prev">← Back</button><button id="next" class="primary">Next →</button><button id="replay">↻ Replay</button></div>
+    </section>
+    <section class="card"><h2>From the video</h2><video id="clip" muted playsinline></video>
+      <div class="note" id="cliptime"></div></section>
+    <section class="card"><h2>Steps</h2><ol class="steps" id="steps"></ol></section>
+    <section class="card"><h2>Parts</h2><ul class="parts" id="parts"></ul>
+      <p class="note" id="note"></p></section>
+  </aside>
+</main>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const qs = new URLSearchParams(location.search);
+const guideUrl = qs.get('guide') || '../work/flag/guide/guide.json';
+const base = guideUrl.slice(0, guideUrl.lastIndexOf('/') + 1);
+const $ = id => document.getElementById(id);
+
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8478, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(6, 12, 8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12 });
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.ShadowMaterial({ opacity: .18 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.PolarGridHelper(12, 12, 6, 64, 0x9a958c, 0xc9c4ba);
+grid.material.transparent = true; grid.material.opacity = .35; scene.add(grid);
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(r.height, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+const guide = await (await fetch(guideUrl)).json();
+$('title').textContent = guide.title;
+$('note').innerHTML = `<span class="seen"></span> ${guide.note}`;
+const loader = new GLTFLoader();
+const objs = {};          // part id -> { group, step }
+await Promise.all(guide.parts.map(p => new Promise(res => loader.load(base + p.glb, g => {
+  const grp = new THREE.Group();
+  g.scene.traverse(o => { if (o.isMesh) {
+    o.castShadow = true; o.receiveShadow = true;
+    const geo = o.geometry;
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    const c = geo.attributes.color;
+    if (c) {                     // trimesh writes sRGB bytes; three.js reads vertex colours as linear
+      const lin = new Float32Array(c.count * 3), tmp = new THREE.Color();
+      for (let i = 0; i < c.count; i++) { tmp.setRGB(c.getX(i), c.getY(i), c.getZ(i), THREE.SRGBColorSpace); lin.set([tmp.r, tmp.g, tmp.b], i * 3); }
+      geo.setAttribute('color', new THREE.BufferAttribute(lin, 3));
+    }
+    o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, metalness: 0, side: THREE.DoubleSide, transparent: true });
+  }});
+  grp.add(g.scene); scene.add(grp); objs[p.id] = { group: grp, part: p }; res();
+}, undefined, () => res()))));
+
+const steps = guide.steps;
+steps.forEach((s, i) => { if (objs[s.part]) objs[s.part].step = i; });
+const box = new THREE.Box3();
+Object.values(objs).forEach(o => box.expandByObject(o.group));
+const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+controls.target.copy(centre);
+camera.position.set(centre.x + size * .9, centre.y + size * .75, centre.z + size * 1.1);
+resize();
+
+// lists
+const partById = Object.fromEntries(guide.parts.map(p => [p.id, p]));
+const sw = c => `<span class="sw" style="background:rgb(${c.join(',')})"></span>`;
+$('parts').innerHTML = guide.parts.map(p => `<li>${sw(p.colour)}<span>${p.name}</span><span class="meta">${Math.round(p.observed * 100)}% seen · ${p.views} views</span></li>`).join('');
+$('steps').innerHTML = steps.map((s, i) => `<li data-i="${i}"><span class="i">${i + 1}</span>${sw(partById[s.part].colour)}<span>${s.text}</span></li>`).join('');
+$('steps').onclick = e => { const li = e.target.closest('li'); if (li) go(+li.dataset.i); };
+
+const clip = $('clip');
+clip.src = base + guide.video;
+let clipRange = [0, 0];
+clip.addEventListener('timeupdate', () => { if (clip.currentTime > clipRange[1] || clip.currentTime < clipRange[0] - .5) clip.currentTime = clipRange[0]; });
+
+let cur = 0, anim = null, explode = 0, playing = false;
+const ease = t => 1 - Math.pow(1 - t, 3);
+function offsetFor(s, amount) {
+  const p = partById[s.part]; const d = Math.max(...p.size) * 1.6 + 2;
+  return new THREE.Vector3(...s.approach).multiplyScalar(d * amount);
+}
+function layout(t) {          // t: 0..1 progress of the current step's fly-in
+  steps.forEach((s, i) => {
+    const o = objs[s.part]; if (!o) return;
+    o.group.visible = i <= cur;
+    const flying = i === cur ? 1 - ease(t) : 0;
+    o.group.position.copy(offsetFor(s, Math.max(flying, explode * (i > 0 ? 1 : 0))));
+    o.group.traverse(m => { if (m.isMesh) {
+      m.material.emissive = new THREE.Color(i === cur && t < 1 ? 0x553311 : 0x000000);
+      m.material.opacity = i === cur ? Math.min(1, .35 + t) : 1;
+    }});
+  });
+}
+function go(i) {
+  cur = Math.max(0, Math.min(steps.length - 1, i));
+  const s = steps[cur];
+  $('tag').textContent = `Step ${cur + 1} of ${steps.length}`;
+  $('stepn').textContent = `Step ${cur + 1}`;
+  $('stept').textContent = s.text;
+  $('prev').disabled = cur === 0; $('next').disabled = cur === steps.length - 1;
+  document.querySelectorAll('#steps li').forEach((li, j) => li.classList.toggle('on', j === cur));
+  clipRange = s.clip; clip.currentTime = s.clip[0]; clip.play().catch(() => {});
+  $('cliptime').textContent = `${s.clip[0].toFixed(1)} s – ${s.clip[1].toFixed(1)} s of the source video`;
+  anim = { t0: performance.now(), dur: 1400 };
+}
+$('prev').onclick = () => go(cur - 1);
+$('next').onclick = () => go(cur + 1);
+$('replay').onclick = () => go(cur);
+$('explode').oninput = e => { explode = +e.target.value; };
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '❚❚ Pause' : '▶ Play'; if (playing) go(0); };
+addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(cur + 1); if (e.key === 'ArrowLeft') go(cur - 1); });
+
+go(0);
+renderer.setAnimationLoop(now => {
+  let t = 1;
+  if (anim) { t = Math.min(1, (now - anim.t0) / anim.dur); if (t >= 1) {
+    if (playing && cur < steps.length - 1 && now - anim.t0 > anim.dur + 900) go(cur + 1);
+    else if (playing && cur === steps.length - 1 && now - anim.t0 > anim.dur + 900) { playing = false; $('play').textContent = '▶ Play'; }
+  }}
+  layout(t);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

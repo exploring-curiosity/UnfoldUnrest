@@ -1,0 +1,44 @@
+# Large local data: clips, model weights, run results, scratch work
+/data/
+/models/
+/runs/
+/work/
+/ride_mirror/
+*.part
+sync_log.jsonl
+
+# Weights and clips that land outside those folders
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.task
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.m4v
+
+# Secrets (SERVICE_TOKEN and API keys live in .env)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Tools and OS
+.playwright-mcp/
+.claude/settings.local.json
+.superpowers/
+.vscode/
+.idea/
+*.log
+.DS_Store
